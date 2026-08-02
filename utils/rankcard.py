@@ -30,7 +30,7 @@ RANK_PROGRESS_BAR_TOP = 72
 RANK_PROGRESS_BAR_HEIGHT = 32
 RANK_PROGRESS_HINT_TOP = 120
 RANK_XP_PANEL_RIGHT = 736
-RANK_MAX_BADGE_BOUNDS = (930, 76, 1098, 124)
+RANK_MAX_BADGE_BOUNDS = (986, RANK_HEADER_Y + Spacing.SM - 2, 1080, RANK_HEADER_Y + Spacing.SM + 30)
 AVATAR_PANEL_WIDTH = 210
 RANK_AVATAR_PANEL_WIDTH = 290
 AVATAR_COLUMN_GAP = Spacing.LG
@@ -134,13 +134,14 @@ def _draw_levelup_stat(card: Image.Image, bounds, label: str, value: str, accent
     _stat(card, bounds, label, value, accent, _fit_level_value)
 
 
-def _draw_profile_panel(card: Image.Image, draw: ImageDraw.ImageDraw, username: str, profile_title: str) -> None:
+def _draw_profile_panel(card: Image.Image, draw: ImageDraw.ImageDraw, username: str, profile_title: str, is_max: bool = False) -> None:
     bounds = (RANK_CONTENT_LEFT, RANK_HEADER_Y, RANK_CONTENT_RIGHT, RANK_HEADER_Y + RANK_HEADER_HEIGHT)
     draw_glass_panel(card, bounds, BorderRadius.PANEL, Glow.BLUE)
     text_left = RANK_CONTENT_LEFT + Spacing.LG - 4
     _draw_section_label(draw, (text_left, bounds[1] + 13), profile_title)
+    reserved_badge_width = (RANK_MAX_BADGE_BOUNDS[2] - RANK_MAX_BADGE_BOUNDS[0]) + Spacing.SM if is_max else 0
     draw.text((text_left, bounds[1] + 33), username,
-              font=_fit_text(draw, username, bounds[2] - text_left - Spacing.MD, 46, 16), fill=Typography.HEADING)
+              font=_fit_text(draw, username, bounds[2] - text_left - Spacing.MD - reserved_badge_width, 46, 16), fill=Typography.HEADING)
 
 
 def _draw_stat_row(card: Image.Image, level: int, xp: int, rank: int | None, max_level: int) -> bool:
@@ -184,8 +185,9 @@ def _render_rank_card(avatar_bytes, username, profile_title, level, xp, rank, da
     draw = ImageDraw.Draw(card)
     draw_glass_panel(card, RANK_AVATAR_PANEL_BOUNDS, BorderRadius.PANEL, Glow.BLUE)
     _avatar(card, avatar_bytes, RANK_AVATAR_POSITION, RANK_AVATAR_SIZE, CardTheme.BLUE)
-    _draw_profile_panel(card, draw, username, profile_title)
-    is_max = _draw_stat_row(card, level, xp, rank, max_level)
+    is_max = level >= max_level
+    _draw_profile_panel(card, draw, username, profile_title, is_max)
+    _draw_stat_row(card, level, xp, rank, max_level)
 
     progress, needed, ratio, at_max = calculate_progress(xp, max_level=max_level)
     xp_panel = (RANK_CONTENT_LEFT, RANK_PROGRESS_Y, RANK_XP_PANEL_RIGHT, RANK_PROGRESS_Y + RANK_PROGRESS_HEIGHT)
@@ -195,7 +197,7 @@ def _render_rank_card(avatar_bytes, username, profile_title, level, xp, rank, da
     _draw_progress_section(card, draw, daily_panel, "Daily XP", f"{daily_xp_earned:,} / {daily_xp_cap:,}",
                            daily_xp_earned / max(daily_xp_cap, 1), "daily", f"{max(daily_xp_cap - daily_xp_earned, 0):,} XP remaining today")
     if is_max:
-        draw_badge(card, RANK_MAX_BADGE_BOUNDS, "MAX LEVEL", CardTheme.GREEN, _load_font(18))
+        draw_badge(card, RANK_MAX_BADGE_BOUNDS, "MAX LEVEL", CardTheme.GREEN, _load_font(13))
     output = BytesIO(); card.save(output, "PNG"); output.seek(0)
     return discord.File(output, filename="rankcard.png")
 
