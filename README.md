@@ -82,34 +82,6 @@ The custom leaderboard reads members from that selected channel and includes onl
 
 Some destinations are stored per guild in `GuildConfig` instead of being fixed in a source file: `leveling_channel`, `attendance_channel`, and `notification_channel`. The Level Up card uses `leveling_channel` when it is configured, otherwise it falls back to `DEFAULT_LEVELING_CHANNEL_ID` in `cogs/leveling.py`.
 
-## Remove an exposed secret from a local commit
-
-First, revoke the exposed Google API key and create a new one. Add the replacement only to your ignored `.env` file as `GEMINI_API_KEY=...`.
-
-If the rejected secret commit is your most recent local commit and it has **not** reached GitHub, preserve your current work while replacing that commit:
-
-```bash
-# Confirm the secret is no longer in tracked source files first.
-git grep -nE 'AQ\.Ab8|AIza' || true
-
-# Remove the latest commit but keep all of its changes locally.
-git reset --soft HEAD~1
-
-# Stage the current, cleaned files and create a replacement commit.
-git add -A
-git diff --cached --check
-git commit -m "Configure Gemini API key from environment"
-git push origin main
-```
-
-If commit `4f02a619f2ae4fab6dd0d5abb421da17cbdeec03` is not the most recent local commit, use an interactive rebase instead:
-
-```bash
-git rebase -i 4f02a619f2ae4fab6dd0d5abb421da17cbdeec03^
-```
-
-Mark that commit as `edit`, remove the secret, run `git add -A`, then run `git commit --amend --no-edit` and `git rebase --continue`. Check with `git grep` again before pushing. Do not use GitHub’s unblock link for a real credential; rotating the key and removing it from the commit is the safe fix.
-
 ## Run the bot
 
 ```bash
