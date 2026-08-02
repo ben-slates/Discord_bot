@@ -1,0 +1,39 @@
+# Python environments and bytecode
+venv/
+.venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Local databases and SQLAlchemy artefacts
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# Test output, logs, and coverage
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.log
+
+# Generated card previews and temporary files
+card-preview/
+card-design-review/
+rank-layout-review/
+welcome-layout-review/
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

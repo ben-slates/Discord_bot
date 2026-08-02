@@ -1,0 +1,322 @@
+import discord
+from discord.ext import commands, tasks
+from discord import app_commands
+import io
+import asyncio
+import datetime
+import os
+from database import SessionLocal, GuildConfig, Ticket
+from dotenv import load_dotenv
+import google.generativeai as genai
+
+load_dotenv()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise RuntimeError("GEMINI_API_KEY is missing. Add it to the project's .env file.")
+genai.configure(api_key=GEMINI_API_KEY)
+model_primary = genai.GenerativeModel('gemini-2.5-flash')
+model_fallback = genai.GenerativeModel('gemini-2.5-flash-lite')
+
+class TicketSupportView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Mark as Resolved", style=discord.ButtonStyle.success, custom_id="ticket_resolved")
+    async def resolved(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cog = interaction.client.get_cog("SupportCog")
+        if cog:
+            cog.human_requested.add(interaction.channel.id)
+        await interaction.response.send_message("Glad it helped! Use `/close` to formally close this ticket.", ephemeral=True)
+
+    @discord.ui.button(label="Talk to Human / Unsatisfied", style=discord.ButtonStyle.danger, custom_id="ticket_human")
+    async def human(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cog = interaction.client.get_cog("SupportCog")
+        if cog:
+            cog.human_requested.add(interaction.channel.id)
+        admin_role = next((r for r in interaction.guild.roles if "admin" in r.name.lower()), None)
+        mention = admin_role.mention if admin_role else "@here"
+        await interaction.response.send_message(f"{mention} {interaction.user.mention} is unsatisfied with the AI answer and requested human assistance!")
+
+class SupportCog(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.bot.add_view(TicketSupportView())
+        self.auto_delete_tickets.start()
+        self.chat_sessions = {}
+        self.human_requested = set()
+
+    def cog_unload(self):
+        self.auto_delete_tickets.cancel()
+
+    @tasks.loop(minutes=30)
+    async def auto_delete_tickets(self):
+        db = SessionLocal()
+        try:
+            threshold = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))) - datetime.timedelta(hours=12)
+            expired_tickets = db.query(Ticket).filter(Ticket.status == "closed", Ticket.closed_at != None, Ticket.closed_at <= threshold).all()
+            for ticket in expired_tickets:
+                guild = self.bot.get_guild(int(ticket.guild_id))
+                if guild:
+                    channel = guild.get_channel(int(ticket.channel_id))
+                    if channel:
+                        try:
+                            await channel.delete(reason="Auto-deleted 12 hours after closing")
+                        except discord.NotFound:
+                            pass
+                        except discord.Forbidden:
+                            pass
+                db.delete(ticket)
+            db.commit()
+        except:
+            pass
+        finally:
+            db.close()
+            
+    @auto_delete_tickets.before_loop
+    async def before_auto_delete(self):
+        await self.bot.wait_until_ready()
+
+    def _is_ticket_open(self, channel_id: int):
+        db = SessionLocal()
+        try:
+            ticket = db.query(Ticket).filter_by(channel_id=str(channel_id), status="open").first()
+            return ticket is not None
+        finally:
+            db.close()
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if message.author.bot or not message.guild:
+            return
+            
+        if message.channel.name.startswith("ticket-"):
+            import asyncio
+            is_open = await asyncio.to_thread(self._is_ticket_open, message.channel.id)
+            if not is_open:
+                return
+                
+            if message.channel.id in self.human_requested:
+                return
+
+            async with message.channel.typing():
+                try:
+                    history_key = message.channel.id
+                    if history_key not in self.chat_sessions:
+                        self.chat_sessions[history_key] = []
+
+                    self.chat_sessions[history_key].append(f"User: {message.content}")
+                    context_str = "\n".join(self.chat_sessions[history_key][-10:])
+                    prompt = f"{context_str}\n\nYou are a helpful IT/Community Support AI for this Discord server. Provide a concise, helpful response based on the conversation history."
+                    try:
+                        response = model_primary.generate_content(prompt)
+                    except Exception as e:
+                        print(f"Primary model failed ({e}), falling back to lite...")
+                        response = model_fallback.generate_content(prompt)
+                    ai_answer = response.text
+                    self.chat_sessions[history_key].append(f"AI: {ai_answer}")
+                except Exception as e:
+                    ai_answer = f"I'm sorry, I couldn't generate an AI response at the moment. Error: {str(e)}"
+
+            embed = discord.Embed(title="AI Assistant", description=ai_answer, color=discord.Color.blue())
+            await message.channel.send(embed=embed, view=TicketSupportView())
+
+    # --- USER COMMANDS ---
+    @app_commands.command(name="ticket", description="Open a support ticket")
+    async def ticket(self, interaction: discord.Interaction, reason: str = None):
+        await interaction.response.defer(ephemeral=True)
+        db = SessionLocal()
+        try:
+            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            if not config or not config.support_enabled:
+                await interaction.followup.send(" Support is disabled.")
+                return
+
+            cat_id = config.support_category
+            if not cat_id:
+                await interaction.followup.send(" Support category not configured.")
+                return
+
+            category = interaction.guild.get_channel(int(cat_id))
+            if not category:
+                await interaction.followup.send(" Invalid support category.")
+                return
+
+            existing = db.query(Ticket).filter_by(guild_id=str(interaction.guild_id), owner_id=str(interaction.user.id), status="open").first()
+            if existing:
+                await interaction.followup.send(" You already have an open ticket.")
+                return
+
+            overwrites = {
+                interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
+                interaction.guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+                interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+            }
+
+            try:
+                channel = await interaction.guild.create_text_channel(
+                    name=f"ticket-{interaction.user.name}",
+                    category=category,
+                    overwrites=overwrites
+                )
+                
+                new_ticket = Ticket(guild_id=str(interaction.guild_id), channel_id=str(channel.id), owner_id=str(interaction.user.id))
+                db.add(new_ticket)
+                db.commit()
+
+                await interaction.followup.send(f" Ticket created: {channel.mention}")
+                
+                embed = discord.Embed(title="Support Ticket", description=f"**Please type your question or issue below!**\nOur AI assistant will try to help you first before a human steps in.\n\nUse `/close` to end, or `/adduser` to invite someone.", color=discord.Color.green())
+                await channel.send(f"{interaction.user.mention}", embed=embed)
+            except discord.Forbidden:
+                await interaction.followup.send(" Missing permissions.")
+        finally:
+            db.close()
+
+    @app_commands.command(name="adduser", description="Admin: Add a user to this ticket")
+    @app_commands.default_permissions(administrator=True)
+    async def adduser(self, interaction: discord.Interaction, member: discord.Member):
+        await interaction.response.defer(ephemeral=True)
+        if not interaction.channel.name.startswith("ticket-"):
+            await interaction.followup.send(" Must be used in a ticket channel.")
+            return
+            
+        await interaction.channel.set_permissions(member, read_messages=True, send_messages=True)
+        await interaction.followup.send(f" Added {member.mention} to the ticket.")
+
+    @app_commands.command(name="removeuser", description="Admin: Remove a user from this ticket")
+    @app_commands.default_permissions(administrator=True)
+    async def removeuser(self, interaction: discord.Interaction, member: discord.Member):
+        await interaction.response.defer(ephemeral=True)
+        if not interaction.channel.name.startswith("ticket-"):
+            await interaction.followup.send(" Must be used in a ticket channel.")
+            return
+            
+        await interaction.channel.set_permissions(member, overwrite=None)
+        await interaction.followup.send(f" Removed {member.mention} from the ticket.")
+
+    @app_commands.command(name="close", description="Close current ticket")
+    async def close(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=False)
+        if not interaction.channel.name.startswith("ticket-"):
+            await interaction.followup.send(" Must be used in a ticket channel.", ephemeral=True)
+            return
+            
+        db = SessionLocal()
+        try:
+            ticket = db.query(Ticket).filter_by(channel_id=str(interaction.channel.id)).first()
+            if ticket:
+                ticket.status = "closed"
+                ticket.closed_at = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5)))
+                db.commit()
+            
+                owner = interaction.guild.get_member(int(ticket.owner_id))
+                if owner:
+                    try:
+                        await interaction.channel.set_permissions(owner, send_messages=False, read_messages=True)
+                    except Exception as perm_err:
+                        print(f"Perm err: {perm_err}")
+            
+            try:
+                await interaction.followup.send(" Ticket marked as closed. Use `/reopen` to restore, or it will be deleted shortly.")
+            except Exception:
+                pass
+                
+            try:
+                # Discord rate-limits channel renaming to twice per 10 minutes. 
+                # Run it as a background task so it doesn't freeze the bot.
+                import asyncio
+                asyncio.create_task(interaction.channel.edit(name=f"closed-{interaction.user.name}"))
+            except Exception as edit_err:
+                print(f"Edit err: {edit_err}")
+        except Exception as e:
+            try:
+                await interaction.followup.send(f" Failed to close ticket: {e}")
+            except:
+                pass
+        finally:
+            db.close()
+
+    # --- ADMIN/STAFF COMMANDS ---
+    @app_commands.command(name="reopen", description="Admin: Reopen a closed ticket")
+    @app_commands.default_permissions(manage_messages=True)
+    async def reopen(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=False)
+        if not interaction.channel.name.startswith("closed-"):
+            await interaction.followup.send(" This is not a closed ticket.", ephemeral=True)
+            return
+            
+        db = SessionLocal()
+        try:
+            ticket = db.query(Ticket).filter_by(channel_id=str(interaction.channel.id)).first()
+            if ticket:
+                ticket.status = "open"
+                ticket.closed_at = None
+                db.commit()
+                owner = interaction.guild.get_member(int(ticket.owner_id))
+                if owner:
+                    await interaction.channel.set_permissions(owner, send_messages=True, read_messages=True)
+                
+            await interaction.followup.send(" Ticket reopened.")
+            
+            import asyncio
+            asyncio.create_task(interaction.channel.edit(name=interaction.channel.name.replace("closed-", "ticket-")))
+        except Exception as e:
+            await interaction.followup.send(f" Failed to reopen ticket: {e}")
+        finally:
+            db.close()
+
+    @app_commands.command(name="transcript", description="Admin: Download ticket transcript")
+    @app_commands.default_permissions(manage_messages=True)
+    async def transcript(self, interaction: discord.Interaction):
+        if not ("ticket-" in interaction.channel.name or "closed-" in interaction.channel.name):
+            await interaction.response.send_message(" Must be used in a ticket channel.", ephemeral=True)
+            return
+            
+        await interaction.response.defer()
+        messages = [msg async for msg in interaction.channel.history(limit=500, oldest_first=True)]
+        
+        transcript = f"Transcript for {interaction.channel.name}\n\n"
+        for m in messages:
+            transcript += f"[{m.created_at.strftime('%Y-%m-%d %H:%M:%S')}] {m.author.name}: {m.content}\n"
+            
+        file = discord.File(io.BytesIO(transcript.encode()), filename=f"{interaction.channel.name}.txt")
+        await interaction.followup.send(" Transcript:", file=file)
+
+    @app_commands.command(name="closeall", description="Admin: Close all open tickets")
+    @app_commands.default_permissions(administrator=True)
+    async def closeall(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=False)
+        db = SessionLocal()
+        try:
+            open_tickets = db.query(Ticket).filter_by(guild_id=str(interaction.guild_id), status="open").all()
+            if not open_tickets:
+                await interaction.followup.send(" No open tickets found.")
+                return
+            
+            count = 0
+            for ticket in open_tickets:
+                try:
+                    ticket.status = "closed"
+                    ticket.closed_at = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5)))
+                    
+                    channel = interaction.guild.get_channel(int(ticket.channel_id))
+                    if channel:
+                        owner = interaction.guild.get_member(int(ticket.owner_id))
+                        if owner:
+                            await channel.set_permissions(owner, send_messages=False, read_messages=True)
+                        
+                        name_suffix = owner.name if owner else "unknown"
+                        await channel.edit(name=f"closed-{name_suffix}")
+                    count += 1
+                except:
+                    pass
+                    
+            db.commit()
+            await interaction.followup.send(f" Successfully closed {count} open ticket(s).")
+        except Exception as e:
+            await interaction.followup.send(f" Error: {e}")
+        finally:
+            db.close()
+
+async def setup(bot):
+    await bot.add_cog(SupportCog(bot))

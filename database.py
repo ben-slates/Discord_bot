@@ -1,0 +1,99 @@
+import os
+from sqlalchemy import create_engine, Column, Integer, BigInteger, String, Boolean, DateTime, ForeignKey, Float
+from sqlalchemy.orm import declarative_base, sessionmaker
+import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
+DB_URL = os.getenv("DATABASE_URL")
+if not DB_URL:
+    DB_URL = "sqlite:///./rynex.db"
+elif DB_URL.startswith("postgres://"):
+    DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
+
+engine = create_engine(
+    DB_URL, 
+    connect_args={"check_same_thread": False} if "sqlite" in DB_URL else {"connect_timeout": 10},
+    pool_pre_ping=True,
+    pool_recycle=1800
+)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+class GuildConfig(Base):
+    __tablename__ = "guild_config"
+    guild_id = Column(String, primary_key=True)
+    # Leveling
+    leveling_enabled = Column(Boolean, default=False)
+    xp_cooldown = Column(Integer, default=60)
+    xp_per_message = Column(Integer, default=15)
+    daily_xp_limit = Column(Integer, default=100)
+    min_message_length = Column(Integer, default=5)
+    leveling_channel = Column(String, nullable=True)
+    # Attendance
+    attendance_enabled = Column(Boolean, default=False)
+    attendance_channel = Column(String, nullable=True)
+    # Support
+    support_enabled = Column(Boolean, default=False)
+    support_category = Column(String, nullable=True)
+    # Security
+    antispam_enabled = Column(Boolean, default=False)
+    antispam_max_messages = Column(Integer, default=5)
+    antispam_seconds = Column(Integer, default=5)
+    # Notifications
+    notification_channel = Column(String, nullable=True)
+    daily_summary_time = Column(String, default="00:00")
+
+class UserData(Base):
+    __tablename__ = "users"
+    user_id = Column(BigInteger, primary_key=True)
+    xp = Column(Integer, default=0, nullable=False)
+    level = Column(Integer, default=1, nullable=False)
+    messages = Column(Integer, default=0, nullable=False)
+    voice_minutes = Column(Integer, default=0, nullable=False)
+    daily_streak = Column(Integer, default=0, nullable=False)
+    reputation = Column(Integer, default=0, nullable=False)
+    daily_xp_earned = Column(Integer, default=0, nullable=False)
+    daily_xp_date = Column(String, nullable=True, default=None)
+    last_daily = Column(DateTime(timezone=True))
+    last_message = Column(String)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))), onupdate=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
+
+class AttendanceLog(Base):
+    __tablename__ = "attendance_logs"
+    id = Column(Integer, primary_key=True)
+    guild_id = Column(String, index=True)
+    user_id = Column(String, index=True)
+    date = Column(String) # YYYY-MM-DD
+    timestamp = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
+
+class Ticket(Base):
+    __tablename__ = "tickets"
+    id = Column(Integer, primary_key=True)
+    guild_id = Column(String, index=True)
+    channel_id = Column(String, index=True)
+    owner_id = Column(String)
+    status = Column(String, default="open") # open, closed
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
+    closed_at = Column(DateTime, nullable=True)
+
+class CustomLeaderboard(Base):
+    __tablename__ = "custom_leaderboards"
+    channel_id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+    guild_id = Column(String, nullable=False)
+
+class NewsLog(Base):
+    __tablename__ = "news_logs"
+    link = Column(String, primary_key=True)
+    posted_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
+
+Base.metadata.create_all(bind=engine)
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
