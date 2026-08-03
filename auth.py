@@ -1,16 +1,20 @@
 import datetime
+import os
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
+from dotenv import load_dotenv
 from database import get_db
 import models
 
-SECRET_KEY = "rynex-super-secret-key-change-in-prod"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
+load_dotenv()
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = os.getenv("ALGORITHM")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
@@ -26,7 +30,7 @@ def create_access_token(data: dict, expires_delta: Optional[datetime.timedelta] 
     if expires_delta:
         expire = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))) + expires_delta
     else:
-        expire = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))) + datetime.timedelta(minutes=15)
+        expire = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))) + datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
