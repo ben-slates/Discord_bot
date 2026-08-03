@@ -79,16 +79,16 @@ class CustomLBCog(commands.Cog):
         user4: discord.Member = None,
         user5: discord.Member = None,
     ):
+        await interaction.response.defer(ephemeral=True)
+
         users = [u for u in (user1, user2, user3, user4, user5) if u is not None]
         if not users:
-            await interaction.response.send_message("Please provide at least one user.", ephemeral=True)
+            await interaction.followup.send("Please provide at least one user.", ephemeral=True)
             return
 
         if len(users) > 5:
-            await interaction.response.send_message("You can add up to 5 users at a time.", ephemeral=True)
+            await interaction.followup.send("You can add up to 5 users at a time.", ephemeral=True)
             return
-
-        await interaction.response.defer(ephemeral=True)
 
         guild = interaction.guild
         if not guild:
@@ -152,15 +152,23 @@ class CustomLBCog(commands.Cog):
             db.commit()
 
             processed_users = assigned_users + already_had_role_users
-            mentions = " ".join(user.mention for user in processed_users)
+            embed = discord.Embed(
+                title="Hall of Fame Updated",
+                description=(
+                    "The Hall of Fame has been updated to recognize members who have demonstrated outstanding commitment and consistent contributions to Rynex Security.\n\n"
+                    "Hall of Fame rankings are determined by each member's overall participation, including assigned tasks, meeting attendance, collaboration, community engagement, and accumulated XP."
+                ),
+                color=discord.Color.gold(),
+                timestamp=datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))),
+            )
             if processed_users:
-                await announcement_channel.send(
-                    f"🎉 Hall of Fame updated! {mentions}"
-                )
+                ranking_lines = [f"#{index} • {user.mention}" for index, user in enumerate(processed_users[:5], start=1)]
+                embed.add_field(name="Current Hall of Fame", value="\n".join(ranking_lines), inline=False)
             else:
-                await announcement_channel.send(
-                    f"🎉 Hall of Fame update attempted, but the bot could not assign the role."
-                )
+                embed.description = "The Hall of Fame update could not assign the role to any provided user."
+
+            embed.set_footer(text="Continue contributing to climb the rankings and earn your place among the community's top performers.")
+            await announcement_channel.send(embed=embed)
 
             try:
                 await interaction.followup.send(
