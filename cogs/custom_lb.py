@@ -162,10 +162,13 @@ class CustomLBCog(commands.Cog):
                     f"🎉 Hall of Fame update attempted, but the bot could not assign the role."
                 )
 
-            await interaction.followup.send(
-                f"Processed {len(users)} user(s). New assignments: {len(assigned_users)}. Already had the role: {len(already_had_role_users)}.",
-                ephemeral=True,
-            )
+            try:
+                await interaction.followup.send(
+                    f"Processed {len(users)} user(s). New assignments: {len(assigned_users)}. Already had the role: {len(already_had_role_users)}.",
+                    ephemeral=True,
+                )
+            except discord.NotFound:
+                pass
 
             asyncio.create_task(
                 self._remove_hall_of_fame_role_after_delay(guild, role, warning_channel, admin_role)
