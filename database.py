@@ -84,6 +84,15 @@ class CustomLeaderboard(Base):
     name = Column(String, nullable=False)
     guild_id = Column(String, nullable=False)
 
+class HallOfFameEntry(Base):
+    __tablename__ = "hall_of_fame_entries"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    guild_id = Column(String, nullable=False, index=True)
+    user_id = Column(BigInteger, nullable=False, index=True)
+    role_name = Column(String, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
+
 class NewsLog(Base):
     __tablename__ = "news_logs"
     link = Column(String, primary_key=True)

@@ -1,16 +1,51 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 import datetime
 import io
 import csv
-from database import SessionLocal, GuildConfig, UserData, AttendanceLog
+from database import SessionLocal, GuildConfig, UserData, AttendanceLog, HallOfFameEntry
 
 class AttendanceCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.daily_cleanup.start()
 
+    def cog_unload(self):
+        self.daily_cleanup.cancel()
 
+    @tasks.loop(time=datetime.time(hour=12, minute=0, tzinfo=datetime.timezone(datetime.timedelta(hours=5))))
+    async def daily_cleanup(self):
+        for guild in self.bot.guilds:
+            db = SessionLocal()
+            try:
+                current_member_ids = {member.id for member in guild.members if not member.bot}
+                current_member_id_strings = {str(member_id) for member_id in current_member_ids}
+
+                attendance_logs = db.query(AttendanceLog).filter_by(guild_id=str(guild.id)).all()
+                for log in attendance_logs:
+                    if str(log.user_id) not in current_member_id_strings:
+                        db.delete(log)
+
+                hall_of_fame_entries = db.query(HallOfFameEntry).filter_by(guild_id=str(guild.id)).all()
+                for entry in hall_of_fame_entries:
+                    if str(entry.user_id) not in current_member_id_strings:
+                        db.delete(entry)
+
+                existing_user_ids = {str(user_id[0]) for user_id in db.query(UserData.user_id).all()}
+                for user_id in existing_user_ids:
+                    if user_id not in current_member_id_strings:
+                        user_record = db.query(UserData).filter_by(user_id=int(user_id)).first()
+                        if user_record:
+                            db.delete(user_record)
+
+                db.commit()
+            finally:
+                db.close()
+
+    @daily_cleanup.before_loop
+    async def before_daily_cleanup(self):
+        await self.bot.wait_until_ready()
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
