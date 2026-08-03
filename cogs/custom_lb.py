@@ -14,6 +14,43 @@ HALL_OF_FAME_ANNOUNCEMENT_CHANNEL_ID = int(os.getenv("HALL_OF_FAME_ANNOUNCEMENT_
 HALL_OF_FAME_WARNING_CHANNEL_ID = int(os.getenv("HALL_OF_FAME_WARNING_CHANNEL_ID", "1519263271943667774"))
 HALL_OF_FAME_DURATION_DAYS = int(os.getenv("HALL_OF_FAME_DURATION_DAYS", "7"))
 HALL_OF_FAME_ADMIN_ROLE_NAME = os.getenv("HALL_OF_FAME_ADMIN_ROLE_NAME", "Administrator")
+HALL_OF_FAME_TEMPLATES = {
+    "red_team": {
+        "label": "Red Team",
+        "title": "Hall of Fame Updated",
+        "description": (
+            "The Hall of Fame has been updated to recognize Red Team members who have demonstrated outstanding commitment and consistent contributions to Rynex Security.\n\n"
+            "Hall of Fame rankings are determined by each member's overall participation, including assigned tasks, meeting attendance, collaboration, community engagement, and accumulated XP."
+        ),
+        "field_name": "Current Red Team Hall of Fame",
+        "footer": "Continue contributing across all areas to climb the rankings and earn your place among the community's top performers.",
+    },
+    "blue_team": {
+        "label": "Blue Team",
+        "title": "Hall of Fame Updated",
+        "description": (
+            "The Hall of Fame has been updated to recognize Blue Team members who have demonstrated outstanding commitment and consistent contributions to Rynex Security.\n\n"
+            "Hall of Fame rankings are determined by each member's overall participation, including assigned tasks, meeting attendance, collaboration, community engagement, and accumulated XP."
+        ),
+        "field_name": "Current Blue Team Hall of Fame",
+        "footer": "Continue contributing across all areas to climb the rankings and earn your place among the community's top performers.",
+    },
+    "overall": {
+        "label": "Overall",
+        "title": "Hall of Fame Updated",
+        "description": (
+            "The Hall of Fame has been updated to recognize department progress across Rynex Security.\n\n"
+            "Select the department that showed the strongest progress and consistency, then review the current standings below."
+        ),
+        "field_name": "Department Progress",
+        "footer": "Continue contributing across both Red Team and Blue Team to keep department progress moving forward.",
+    },
+}
+
+HALL_OF_FAME_DEPARTMENTS = {
+    "red_team": "Red Team",
+    "blue_team": "Blue Team",
+}
 
 
 class CustomLBCog(commands.Cog):
@@ -61,9 +98,16 @@ class CustomLBCog(commands.Cog):
         finally:
             db.close()
 
-    @app_commands.command(name="add_to_hall_of_fame", description="Admin:Add users to the Hall of Fame role")
+    @app_commands.command(name="hall_of_fame", description="Admin:Add users to the Hall of Fame role")
+    @app_commands.choices(
+        template=[
+            app_commands.Choice(name="Red Team", value="red_team"),
+            app_commands.Choice(name="Blue Team", value="blue_team"),
+        ]
+    )
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
+        template="Choose the Hall of Fame template to use",
         user1="First user to add (max 5 total)",
         user2="Second user to add (max 5 total)",
         user3="Third user to add (max 5 total)",
@@ -73,6 +117,7 @@ class CustomLBCog(commands.Cog):
     async def add_to_hall_of_fame(
         self,
         interaction: discord.Interaction,
+        template: app_commands.Choice[str],
         user1: discord.Member = None,
         user2: discord.Member = None,
         user3: discord.Member = None,
@@ -81,13 +126,19 @@ class CustomLBCog(commands.Cog):
     ):
         await interaction.response.defer(ephemeral=True)
 
+        template_key = template.value
+        template_config = HALL_OF_FAME_TEMPLATES.get(template_key)
+        if not template_config:
+            await interaction.followup.send("Invalid Hall of Fame template selected.", ephemeral=True)
+            return
+
         users = [u for u in (user1, user2, user3, user4, user5) if u is not None]
         if not users:
             await interaction.followup.send("Please provide at least one user.", ephemeral=True)
             return
 
         if len(users) > 5:
-            await interaction.followup.send("You can add up to 5 users at a time.", ephemeral=True)
+            await interaction.followup.send(f"You can add up to 5 user(s) for the {template_config['label']} template.", ephemeral=True)
             return
 
         guild = interaction.guild
@@ -153,22 +204,19 @@ class CustomLBCog(commands.Cog):
 
             processed_users = assigned_users + already_had_role_users
             embed = discord.Embed(
-                title="Hall of Fame Updated",
-                description=(
-                    "The Hall of Fame has been updated to recognize members who have demonstrated outstanding commitment and consistent contributions to Rynex Security.\n\n"
-                    "Hall of Fame rankings are determined by each member's overall participation, including assigned tasks, meeting attendance, collaboration, community engagement, and accumulated XP."
-                ),
+                title=template_config["title"],
+                description=template_config["description"],
                 color=discord.Color.gold(),
                 timestamp=datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))),
             )
             if processed_users:
                 ranking_lines = [f"#{index} • {user.mention}" for index, user in enumerate(processed_users[:5], start=1)]
-                embed.add_field(name="Current Hall of Fame", value="\n".join(ranking_lines), inline=False)
+                embed.add_field(name=template_config["field_name"], value="\n".join(ranking_lines), inline=False)
             else:
                 embed.description = "The Hall of Fame update could not assign the role to any provided user."
 
-            embed.set_footer(text="Continue contributing to climb the rankings and earn your place among the community's top performers.")
-            await announcement_channel.send(embed=embed)
+            embed.set_footer(text=template_config["footer"])
+            await announcement_channel.send(content="@everyone", embed=embed)
 
             try:
                 await interaction.followup.send(
@@ -183,6 +231,72 @@ class CustomLBCog(commands.Cog):
             )
         finally:
             db.close()
+
+    @app_commands.command(name="hall_of_fame_overall", description="Admin:Announce department progress for the Hall of Fame")
+    @app_commands.choices(
+        department=[
+            app_commands.Choice(name="Red Team", value="red_team"),
+            app_commands.Choice(name="Blue Team", value="blue_team"),
+        ]
+    )
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        department="Choose the department to announce",
+    )
+    async def hall_of_fame_overall(
+        self,
+        interaction: discord.Interaction,
+        department: app_commands.Choice[str],
+    ):
+        await interaction.response.defer(ephemeral=True)
+
+        department_label = HALL_OF_FAME_DEPARTMENTS.get(department.value)
+        if not department_label:
+            await interaction.followup.send("Please choose Red Team or Blue Team.", ephemeral=True)
+            return
+
+        guild = interaction.guild
+        if not guild:
+            await interaction.followup.send("This command can only be used in a server.", ephemeral=True)
+            return
+
+        announcement_channel = guild.get_channel(HALL_OF_FAME_ANNOUNCEMENT_CHANNEL_ID)
+        if not announcement_channel:
+            await interaction.followup.send("The configured announcement channel could not be found.", ephemeral=True)
+            return
+
+        template_config = HALL_OF_FAME_TEMPLATES["overall"]
+        department_word = department_label.split()[0].lower()
+        matching_roles = [role.mention for role in guild.roles if department_word in role.name.lower()]
+        embed = discord.Embed(
+            title=template_config["title"],
+            description=(
+                f"The Hall of Fame has been updated to recognize {department_label} department progress across Rynex Security.\n\n"
+                f"{department_label} is showing strong consistency, collaboration, and contribution across assigned tasks, meeting attendance, community engagement, and accumulated XP."
+            ),
+            color=discord.Color.gold(),
+            timestamp=datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))),
+        )
+        embed.add_field(
+            name=f"{department_label} Department Progress",
+            value=f"{department_label} progress is good. Keep pushing the department forward and maintain the momentum.",
+            inline=False,
+        )
+        embed.add_field(
+            name="Related Roles",
+            value="\n".join(matching_roles) if matching_roles else f"No roles found containing '{department_word}'.",
+            inline=False,
+        )
+        embed.set_footer(text=template_config["footer"])
+        await announcement_channel.send(content="@everyone", embed=embed)
+
+        try:
+            await interaction.followup.send(
+                f"Posted Overall department progress for {department_label}.",
+                ephemeral=True,
+            )
+        except discord.NotFound:
+            pass
 
     async def _remove_hall_of_fame_role_after_delay(self, guild, role, warning_channel, admin_role):
         db = SessionLocal()
