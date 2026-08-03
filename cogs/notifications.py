@@ -3,6 +3,7 @@ from discord.ext import commands, tasks
 from discord import app_commands
 import datetime
 from database import SessionLocal, GuildConfig, UserData, AttendanceLog, CustomLeaderboard
+from utils.leaderboard import should_include_member_for_custom_leaderboard
 
 class NotificationsCog(commands.Cog):
     def __init__(self, bot):
@@ -114,9 +115,8 @@ class NotificationsCog(commands.Cog):
                         for member in channel.members:
                             if member.bot: continue
                             
-                            # Only include users who have an "internee" role
-                            is_internee = any("internee" in role.name.lower() for role in member.roles)
-                            if not is_internee: continue
+                            if not should_include_member_for_custom_leaderboard(member):
+                                continue
                             
                             user = user_map.get(member.id)
                             if not user: continue

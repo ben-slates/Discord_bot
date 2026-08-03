@@ -7,6 +7,7 @@ import datetime
 from database import SessionLocal, GuildConfig, UserData, CustomLeaderboard, AttendanceLog
 import sys
 import os
+from utils.leaderboard import should_include_member_for_custom_leaderboard
 
 DEFAULT_LEVELING_CHANNEL_ID = 1519264254178623488
 
@@ -164,9 +165,8 @@ class LevelingCog(commands.Cog):
                     for member in channel.members:
                         if member.bot: continue
                         
-                        # Only include users who have an "internee" role
-                        is_internee = any("internee" in role.name.lower() for role in member.roles)
-                        if not is_internee: continue
+                        if not should_include_member_for_custom_leaderboard(member):
+                            continue
                         
                         user = user_map.get(member.id)
                         if not user: continue
