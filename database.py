@@ -33,6 +33,15 @@ class GuildConfig(Base):
     # Attendance
     attendance_enabled = Column(Boolean, default=False)
     attendance_channel = Column(String, nullable=True)
+    # Welcome messages
+    welcome_enabled = Column(Boolean, default=False)
+    welcome_channel = Column(String, nullable=True)
+    # Hall of Fame
+    hall_of_fame_enabled = Column(Boolean, default=False)
+    hall_of_fame_channel = Column(String, nullable=True)
+    hall_of_fame_role_name = Column(String, nullable=True)
+    hall_of_fame_announcement_channel = Column(String, nullable=True)
+    hall_of_fame_warning_channel = Column(String, nullable=True)
     # Support
     support_enabled = Column(Boolean, default=False)
     support_category = Column(String, nullable=True)
@@ -150,6 +159,27 @@ def ensure_database_columns():
     if "leaderboard_channel" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN leaderboard_channel VARCHAR"))
+    if "welcome_enabled" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN welcome_enabled BOOLEAN DEFAULT FALSE"))
+    if "welcome_channel" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN welcome_channel VARCHAR"))
+    if "hall_of_fame_enabled" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN hall_of_fame_enabled BOOLEAN DEFAULT FALSE"))
+    if "hall_of_fame_channel" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN hall_of_fame_channel VARCHAR"))
+    if "hall_of_fame_role_name" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN hall_of_fame_role_name VARCHAR"))
+    if "hall_of_fame_announcement_channel" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN hall_of_fame_announcement_channel VARCHAR"))
+    if "hall_of_fame_warning_channel" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN hall_of_fame_warning_channel VARCHAR"))
     if "level_up_announcements_enabled" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN level_up_announcements_enabled BOOLEAN DEFAULT FALSE"))

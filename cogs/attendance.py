@@ -102,11 +102,16 @@ class AttendanceCog(commands.Cog):
 
     @app_commands.command(name="stats", description="Shows overall attendance statistics")
     async def stats(self, interaction: discord.Interaction):
-        if interaction.channel_id != 1529889568172544170:
-            await interaction.response.send_message("This command can only be used in <#1529889568172544170>.", ephemeral=True)
-            return
         db = SessionLocal()
         try:
+            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            if not config or not config.attendance_enabled or not config.attendance_channel:
+                await interaction.response.send_message("Attendance is not enabled for this server.", ephemeral=True)
+                return
+            if str(interaction.channel_id) != config.attendance_channel:
+                await interaction.response.send_message(f"This command can only be used in <#{config.attendance_channel}>.", ephemeral=True)
+                return
+            
             total_members = sum(1 for m in interaction.guild.members if not m.bot)
             today_str = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))).strftime('%Y-%m-%d')
             
@@ -137,12 +142,16 @@ class AttendanceCog(commands.Cog):
         user="Specific user to export"
     )
     async def export(self, interaction: discord.Interaction, month: str = None, day: str = None, user: discord.Member = None):
-        if interaction.channel_id != 1529889568172544170:
-            await interaction.response.send_message("This command can only be used in <#1529889568172544170>.", ephemeral=True)
-            return
-        await interaction.response.defer(ephemeral=True)
         db = SessionLocal()
         try:
+            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            if not config or not config.attendance_enabled or not config.attendance_channel:
+                await interaction.response.send_message("Attendance is not enabled for this server.", ephemeral=True)
+                return
+            if str(interaction.channel_id) != config.attendance_channel:
+                await interaction.response.send_message(f"This command can only be used in <#{config.attendance_channel}>.", ephemeral=True)
+                return
+            await interaction.response.defer(ephemeral=True)
             query = db.query(AttendanceLog).filter_by(guild_id=str(interaction.guild_id))
             if user:
                 query = query.filter_by(user_id=str(user.id))
@@ -169,11 +178,15 @@ class AttendanceCog(commands.Cog):
 
     @app_commands.command(name="today", description="Shows today's attendance")
     async def today(self, interaction: discord.Interaction):
-        if interaction.channel_id != 1529889568172544170:
-            await interaction.response.send_message("This command can only be used in <#1529889568172544170>.", ephemeral=True)
-            return
         db = SessionLocal()
         try:
+            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            if not config or not config.attendance_enabled or not config.attendance_channel:
+                await interaction.response.send_message("Attendance is not enabled for this server.", ephemeral=True)
+                return
+            if str(interaction.channel_id) != config.attendance_channel:
+                await interaction.response.send_message(f"This command can only be used in <#{config.attendance_channel}>.", ephemeral=True)
+                return
             today_str = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))).strftime('%Y-%m-%d')
             logs = db.query(AttendanceLog).filter_by(guild_id=str(interaction.guild_id), date=today_str).all()
             
@@ -204,76 +217,97 @@ class AttendanceCog(commands.Cog):
 
     @app_commands.command(name="user", description="Shows attendance history of a member")
     async def user(self, interaction: discord.Interaction, member: discord.Member = None):
-        if interaction.channel_id != 1529889568172544170:
-            await interaction.response.send_message("This command can only be used in <#1529889568172544170>.", ephemeral=True)
-            return
-        target = member or interaction.user
-        target_id_str = str(target.id)
-        
         db = SessionLocal()
         try:
-            total_presents = db.query(AttendanceLog).filter_by(guild_id=str(interaction.guild_id), user_id=target_id_str).count()
+            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            if not config or not config.attendance_enabled or not config.attendance_channel:
+                await interaction.response.send_message("Attendance is not enabled for this server.", ephemeral=True)
+                return
+            if str(interaction.channel_id) != config.attendance_channel:
+                await interaction.response.send_message(
+                    f"This command can only be used in <#{config.attendance_channel}>",
+                    ephemeral=True,
+                )
+                return
+
+            target = member or interaction.user
+            target_id_str = str(target.id)
+
+            total_presents = db.query(AttendanceLog).filter_by(
+                guild_id=str(interaction.guild_id),
+                user_id=target_id_str,
+            ).count()
             if total_presents == 0:
                 await interaction.response.send_message("No data found for this user.", ephemeral=True)
                 return
-            
+
             embed = discord.Embed(
                 title=f"Attendance Record: {target.display_name}",
-                color=discord.Color.blue()
+                color=discord.Color.blue(),
             )
-            
+
             embed.add_field(name="Username", value=target.name, inline=True)
             embed.add_field(name="Total Presents", value=str(total_presents), inline=True)
-            
-            # Calculate recent attendance
+
             recent_days = []
             current_time = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5)))
-            
+
             for i in range(7):
                 date_to_check = (current_time - datetime.timedelta(days=i)).strftime('%Y-%m-%d')
-                log = db.query(AttendanceLog).filter_by(guild_id=str(interaction.guild_id), user_id=target_id_str, date=date_to_check).first()
-                
+                log = db.query(AttendanceLog).filter_by(
+                    guild_id=str(interaction.guild_id),
+                    user_id=target_id_str,
+                    date=date_to_check,
+                ).first()
+
                 if log:
                     recent_days.append(f"{date_to_check}: Present")
                 else:
                     recent_days.append(f"{date_to_check}: Absent")
-                    
+
             embed.add_field(name="Last 7 Days", value="\n".join(recent_days), inline=False)
-            
             await interaction.response.send_message(embed=embed)
         finally:
             db.close()
-            
+
     @app_commands.command(name="month", description="Shows monthly attendance for a selected month (YYYY-MM)")
     @app_commands.describe(month_str="Format: YYYY-MM (e.g., 2024-05). Leave blank for current month.")
     async def month(self, interaction: discord.Interaction, month_str: str = None):
-        if interaction.channel_id != 1529889568172544170:
-            await interaction.response.send_message("This command can only be used in <#1529889568172544170>.", ephemeral=True)
-            return
-        if not month_str:
-            month_str = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))).strftime('%Y-%m')
-            
-        try:
-            # Validate format
-            datetime.datetime.strptime(month_str, '%Y-%m')
-        except ValueError:
-            await interaction.response.send_message("Invalid format. Please use YYYY-MM.", ephemeral=True)
-            return
-            
         db = SessionLocal()
         try:
-            logs = db.query(AttendanceLog).filter_by(guild_id=str(interaction.guild_id)).filter(AttendanceLog.date.like(f"{month_str}-%")).all()
-            
-            # Count unique days tracked in this month
+            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            if not config or not config.attendance_enabled or not config.attendance_channel:
+                await interaction.response.send_message("Attendance is not enabled for this server.", ephemeral=True)
+                return
+            if str(interaction.channel_id) != config.attendance_channel:
+                await interaction.response.send_message(
+                    f"This command can only be used in <#{config.attendance_channel}>",
+                    ephemeral=True,
+                )
+                return
+
+            if not month_str:
+                month_str = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))).strftime('%Y-%m')
+
+            try:
+                datetime.datetime.strptime(month_str, '%Y-%m')
+            except ValueError:
+                await interaction.response.send_message("Invalid format. Please use YYYY-MM.", ephemeral=True)
+                return
+
+            logs = db.query(AttendanceLog).filter_by(guild_id=str(interaction.guild_id)).filter(
+                AttendanceLog.date.like(f"{month_str}-%")
+            ).all()
+
             unique_days = set(log.date for log in logs)
             days_in_month = len(unique_days)
             total_presents = len(logs)
-            
+
             embed = discord.Embed(
                 title=f"Monthly Summary: {month_str}",
-                color=discord.Color.purple()
+                color=discord.Color.purple(),
             )
-            
+
             if days_in_month == 0:
                 embed.description = "No attendance data found for this month."
             else:
@@ -281,7 +315,7 @@ class AttendanceCog(commands.Cog):
                 embed.add_field(name="Days Tracked", value=str(days_in_month), inline=True)
                 embed.add_field(name="Total Presents (All Users)", value=str(total_presents), inline=True)
                 embed.add_field(name="Avg Daily Attendance", value=f"{avg_daily:.1f}", inline=True)
-                
+
             await interaction.response.send_message(embed=embed)
         finally:
             db.close()

@@ -10,11 +10,7 @@ from utils.leaderboard import get_leaderboard_channel_id
 
 load_dotenv()
 
-HALL_OF_FAME_ROLE_NAME = os.getenv("HALL_OF_FAME_ROLE_NAME", "Hall of Fame")
-HALL_OF_FAME_ANNOUNCEMENT_CHANNEL_ID = int(os.getenv("HALL_OF_FAME_ANNOUNCEMENT_CHANNEL_ID", "1519244608532647996"))
-HALL_OF_FAME_WARNING_CHANNEL_ID = int(os.getenv("HALL_OF_FAME_WARNING_CHANNEL_ID", "1519263271943667774"))
-HALL_OF_FAME_DURATION_DAYS = int(os.getenv("HALL_OF_FAME_DURATION_DAYS", "7"))
-HALL_OF_FAME_ADMIN_ROLE_NAME = os.getenv("HALL_OF_FAME_ADMIN_ROLE_NAME", "Administrator")
+HALL_OF_FAME_DURATION_DAYS = 7
 HALL_OF_FAME_TEMPLATES = {
     "red_team": {
         "label": "Red Team",
@@ -36,6 +32,16 @@ HALL_OF_FAME_TEMPLATES = {
         "field_name": "Current Blue Team Hall of Fame",
         "footer": "Continue contributing across all areas to climb the rankings and earn your place among the community's top performers.",
     },
+    "custom": {
+        "label": "Custom",
+        "title": "Hall of Fame Updated",
+        "description": (
+            "The Hall of Fame has been updated to recognize {name} members who have demonstrated outstanding commitment and consistent contributions to Rynex Security.\n\n"
+            "Hall of Fame rankings are determined by each member's overall participation, including assigned tasks, meeting attendance, collaboration, community engagement, and accumulated XP."
+        ),
+        "field_name": "Current {name} Hall of Fame",
+        "footer": "Continue contributing across all areas to climb the rankings and earn your place among the community's top performers.",
+    },
     "overall": {
         "label": "Overall",
         "title": "Hall of Fame Updated",
@@ -52,6 +58,40 @@ HALL_OF_FAME_DEPARTMENTS = {
     "red_team": "Red Team",
     "blue_team": "Blue Team",
 }
+
+
+def build_hall_of_fame_template(template_key, custom_name=None):
+    if template_key != "custom":
+        return HALL_OF_FAME_TEMPLATES[template_key]
+
+    name = (custom_name or "").strip()
+    if not name:
+        raise ValueError("Please provide a custom name for the custom Hall of Fame template.")
+
+    return {
+        "label": name,
+        "title": HALL_OF_FAME_TEMPLATES["custom"]["title"],
+        "description": HALL_OF_FAME_TEMPLATES["custom"]["description"].format(name=name),
+        "field_name": HALL_OF_FAME_TEMPLATES["custom"]["field_name"].format(name=name),
+        "footer": HALL_OF_FAME_TEMPLATES["custom"]["footer"],
+    }
+
+
+def build_hall_of_fame_overall_content(department_key, department_name=None):
+    if department_name and department_name.strip():
+        label = department_name.strip()
+        description = (
+            f"The Hall of Fame has been updated to recognize {label} department progress across Rynex Security.\n\n"
+            f"{label} is showing strong consistency, collaboration, and contribution across assigned tasks, meeting attendance, community engagement, and accumulated XP."
+        )
+        return label, description
+
+    label = HALL_OF_FAME_DEPARTMENTS.get(department_key, department_key)
+    description = (
+        f"The Hall of Fame has been updated to recognize {label} department progress across Rynex Security.\n\n"
+        f"{label} is showing strong consistency, collaboration, and contribution across assigned tasks, meeting attendance, community engagement, and accumulated XP."
+    )
+    return label, description
 
 
 class CustomLBCog(commands.Cog):
@@ -107,13 +147,23 @@ class CustomLBCog(commands.Cog):
             app_commands.Choice(name="Bot Logs", value="bot_logs"),
             app_commands.Choice(name="CVE and News", value="cve_and_news"),
             app_commands.Choice(name="Support", value="support"),
+            app_commands.Choice(name="Attendance", value="attendance"),
+            app_commands.Choice(name="Welcome Messages", value="welcome"),
             app_commands.Choice(name="Leaderboard", value="leaderboard"),
             app_commands.Choice(name="Level Up Announcements", value="level_up_announcements"),
         ]
     )
     @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(option="The feature to enable", channel="The channel/category to use for this feature")
-    async def enable_feature(self, interaction: discord.Interaction, option: app_commands.Choice[str], channel: discord.abc.GuildChannel):
+    @app_commands.describe(
+        option="The feature to enable",
+        channel="The target channel or category for this feature",
+    )
+    async def enable_feature(
+        self,
+        interaction: discord.Interaction,
+        option: app_commands.Choice[str],
+        channel: discord.abc.GuildChannel,
+    ):
         db = SessionLocal()
         try:
             config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
@@ -151,6 +201,30 @@ class CustomLBCog(commands.Cog):
                 await interaction.response.send_message(f"Support enabled for category {channel.mention}.", ephemeral=True)
                 return
 
+            if option.value == "attendance":
+                if not isinstance(channel, discord.TextChannel):
+                    await interaction.response.send_message("Attendance must use a text channel.", ephemeral=True)
+                    return
+                config.attendance_enabled = True
+                config.attendance_channel = str(channel.id)
+                db.commit()
+                await interaction.response.send_message(f"Attendance enabled for {channel.mention}.", ephemeral=True)
+                return
+
+            if option.value == "welcome":
+                if not isinstance(channel, discord.TextChannel):
+                    await interaction.response.send_message("Welcome messages must use a text channel.", ephemeral=True)
+                    return
+                config.welcome_enabled = True
+                config.welcome_channel = str(channel.id)
+                db.commit()
+                await interaction.response.send_message(f"Welcome messages enabled for {channel.mention}.", ephemeral=True)
+                return
+
+            if option.value == "hall_of_fame":
+                await interaction.response.send_message("Use /enable_hall_of_fame for Hall of Fame setup.", ephemeral=True)
+                return
+
             if option.value == "leaderboard":
                 if not isinstance(channel, discord.TextChannel):
                     await interaction.response.send_message("Leaderboard must use a text channel.", ephemeral=True)
@@ -175,12 +249,56 @@ class CustomLBCog(commands.Cog):
         finally:
             db.close()
 
+    @app_commands.command(name="enable_hall_of_fame", description="Admin:Enable Hall of Fame with a role and two channels")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        role_name="The role to use for Hall of Fame",
+        announcement_channel="The channel for Hall of Fame announcements",
+        warning_channel="The channel for Hall of Fame warning messages",
+    )
+    async def enable_hall_of_fame(
+        self,
+        interaction: discord.Interaction,
+        role_name: discord.Role,
+        announcement_channel: discord.TextChannel,
+        warning_channel: discord.TextChannel,
+    ):
+        db = SessionLocal()
+        try:
+            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            if not config:
+                config = GuildConfig(guild_id=str(interaction.guild_id))
+                db.add(config)
+
+            if not isinstance(announcement_channel, discord.TextChannel):
+                await interaction.response.send_message("Announcement channel must be a text channel.", ephemeral=True)
+                return
+            if not isinstance(warning_channel, discord.TextChannel):
+                await interaction.response.send_message("Warning channel must be a text channel.", ephemeral=True)
+                return
+
+            config.hall_of_fame_enabled = True
+            config.hall_of_fame_channel = str(announcement_channel.id)
+            config.hall_of_fame_role_name = role_name.name
+            config.hall_of_fame_announcement_channel = str(announcement_channel.id)
+            config.hall_of_fame_warning_channel = str(warning_channel.id)
+            db.commit()
+            await interaction.response.send_message(
+                f"Hall of Fame enabled. Role: {config.hall_of_fame_role_name}",
+                ephemeral=True,
+            )
+        finally:
+            db.close()
+
     @app_commands.command(name="disable", description="Admin:Disable a feature for this server")
     @app_commands.choices(
         option=[
             app_commands.Choice(name="Bot Logs", value="bot_logs"),
             app_commands.Choice(name="CVE and News", value="cve_and_news"),
             app_commands.Choice(name="Support", value="support"),
+            app_commands.Choice(name="Attendance", value="attendance"),
+            app_commands.Choice(name="Welcome Messages", value="welcome"),
+            app_commands.Choice(name="Hall of Fame", value="hall_of_fame"),
             app_commands.Choice(name="Leaderboard", value="leaderboard"),
             app_commands.Choice(name="Level Up Announcements", value="level_up_announcements"),
         ]
@@ -214,6 +332,30 @@ class CustomLBCog(commands.Cog):
                 config.support_category = None
                 db.commit()
                 await interaction.response.send_message("Support disabled.", ephemeral=True)
+                return
+
+            if option.value == "attendance":
+                config.attendance_enabled = False
+                config.attendance_channel = None
+                db.commit()
+                await interaction.response.send_message("Attendance disabled.", ephemeral=True)
+                return
+
+            if option.value == "welcome":
+                config.welcome_enabled = False
+                config.welcome_channel = None
+                db.commit()
+                await interaction.response.send_message("Welcome messages disabled.", ephemeral=True)
+                return
+
+            if option.value == "hall_of_fame":
+                config.hall_of_fame_enabled = False
+                config.hall_of_fame_channel = None
+                config.hall_of_fame_role_name = None
+                config.hall_of_fame_announcement_channel = None
+                config.hall_of_fame_warning_channel = None
+                db.commit()
+                await interaction.response.send_message("Hall of Fame disabled.", ephemeral=True)
                 return
 
             if option.value == "leaderboard":
@@ -320,7 +462,7 @@ class CustomLBCog(commands.Cog):
                     import os
                     import sys
                     sys.path.append(os.path.join(os.path.dirname(__file__), "..", "utils"))
-                    from rankcard import generate_levelup_card
+                    from rankcard import generate_levelup_card # type: ignore
 
                     card_file = await generate_levelup_card(
                         interaction.user,
@@ -401,6 +543,7 @@ class CustomLBCog(commands.Cog):
         template=[
             app_commands.Choice(name="Red Team", value="red_team"),
             app_commands.Choice(name="Blue Team", value="blue_team"),
+            app_commands.Choice(name="Custom", value="custom"),
         ]
     )
     @app_commands.default_permissions(administrator=True)
@@ -411,22 +554,37 @@ class CustomLBCog(commands.Cog):
         user3="Third user to add (max 5 total)",
         user4="Fourth user to add (max 5 total)",
         user5="Fifth user to add (max 5 total)",
+        custom_name="Optional custom name to use for the custom template",
     )
     async def add_to_hall_of_fame(
         self,
         interaction: discord.Interaction,
         template: app_commands.Choice[str],
+        custom_name: str = None,
         user1: discord.Member = None,
         user2: discord.Member = None,
         user3: discord.Member = None,
         user4: discord.Member = None,
         user5: discord.Member = None,
     ):
+        db = SessionLocal()
+        try:
+            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            if not config or not config.hall_of_fame_enabled or not config.hall_of_fame_channel:
+                await interaction.response.send_message("Hall of Fame is not enabled for this server yet.", ephemeral=True)
+                return
+        finally:
+            db.close()
+
         await interaction.response.defer(ephemeral=True)
 
         template_key = template.value
-        template_config = HALL_OF_FAME_TEMPLATES.get(template_key)
-        if not template_config:
+        try:
+            template_config = build_hall_of_fame_template(template_key, custom_name=custom_name)
+        except ValueError as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
+        except KeyError:
             await interaction.followup.send("Invalid Hall of Fame template selected.", ephemeral=True)
             return
 
@@ -444,21 +602,25 @@ class CustomLBCog(commands.Cog):
             await interaction.followup.send("This command can only be used in a server.", ephemeral=True)
             return
 
-        role = discord.utils.get(guild.roles, name=HALL_OF_FAME_ROLE_NAME)
+        role_name = (config.hall_of_fame_role_name or "").strip()
+        if not role_name:
+            await interaction.followup.send("Hall of Fame role name is not configured for this server yet.", ephemeral=True)
+            return
+        role = discord.utils.get(guild.roles, name=role_name)
         if not role:
             try:
-                role = await guild.create_role(name=HALL_OF_FAME_ROLE_NAME, reason="Hall of Fame role")
+                role = await guild.create_role(name=role_name, reason="Hall of Fame role")
             except discord.Forbidden:
                 await interaction.followup.send("I do not have permission to create or manage the Hall of Fame role.", ephemeral=True)
                 return
 
-        announcement_channel = guild.get_channel(HALL_OF_FAME_ANNOUNCEMENT_CHANNEL_ID)
-        warning_channel = guild.get_channel(HALL_OF_FAME_WARNING_CHANNEL_ID)
+        announcement_channel_id = config.hall_of_fame_announcement_channel or config.hall_of_fame_channel
+        warning_channel_id = config.hall_of_fame_warning_channel or config.hall_of_fame_channel
+        announcement_channel = guild.get_channel(int(announcement_channel_id)) if announcement_channel_id else None
+        warning_channel = guild.get_channel(int(warning_channel_id)) if warning_channel_id else None
         if not announcement_channel or not warning_channel:
-            await interaction.followup.send("The configured announcement or warning channel could not be found.", ephemeral=True)
+            await interaction.followup.send("The configured Hall of Fame channel could not be found.", ephemeral=True)
             return
-
-        admin_role = discord.utils.get(guild.roles, name=HALL_OF_FAME_ADMIN_ROLE_NAME)
 
         db = SessionLocal()
         assigned_users = []
@@ -525,7 +687,7 @@ class CustomLBCog(commands.Cog):
                 pass
 
             asyncio.create_task(
-                self._remove_hall_of_fame_role_after_delay(guild, role, warning_channel, admin_role)
+                self._remove_hall_of_fame_role_after_delay(guild, role, warning_channel)
             )
         finally:
             db.close()
@@ -540,17 +702,31 @@ class CustomLBCog(commands.Cog):
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
         department="Choose the department to announce",
+        department_name="Optional custom department name to announce",
     )
     async def hall_of_fame_overall(
         self,
         interaction: discord.Interaction,
-        department: app_commands.Choice[str],
+        department: app_commands.Choice[str] = None,
+        department_name: str = None,
     ):
+        db = SessionLocal()
+        try:
+            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            if not config or not config.hall_of_fame_enabled or not config.hall_of_fame_channel:
+                await interaction.response.send_message("Hall of Fame is not enabled for this server yet.", ephemeral=True)
+                return
+        finally:
+            db.close()
+
         await interaction.response.defer(ephemeral=True)
 
-        department_label = HALL_OF_FAME_DEPARTMENTS.get(department.value)
+        department_label, description = build_hall_of_fame_overall_content(
+            department.value if department else None,
+            department_name=department_name,
+        )
         if not department_label:
-            await interaction.followup.send("Please choose Red Team or Blue Team.", ephemeral=True)
+            await interaction.followup.send("Please choose Red Team or Blue Team, or provide a custom department name.", ephemeral=True)
             return
 
         guild = interaction.guild
@@ -558,7 +734,8 @@ class CustomLBCog(commands.Cog):
             await interaction.followup.send("This command can only be used in a server.", ephemeral=True)
             return
 
-        announcement_channel = guild.get_channel(HALL_OF_FAME_ANNOUNCEMENT_CHANNEL_ID)
+        announcement_channel_id = config.hall_of_fame_announcement_channel or config.hall_of_fame_channel
+        announcement_channel = guild.get_channel(int(announcement_channel_id)) if announcement_channel_id else None
         if not announcement_channel:
             await interaction.followup.send("The configured announcement channel could not be found.", ephemeral=True)
             return
@@ -568,12 +745,14 @@ class CustomLBCog(commands.Cog):
         matching_roles = [role.mention for role in guild.roles if department_word in role.name.lower()]
         embed = discord.Embed(
             title=template_config["title"],
-            description=(
-                f"The Hall of Fame has been updated to recognize {department_label} department progress across Rynex Security.\n\n"
-                f"{department_label} is showing strong consistency, collaboration, and contribution across assigned tasks, meeting attendance, community engagement, and accumulated XP."
-            ),
+            description=description,
             color=discord.Color.gold(),
             timestamp=datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))),
+        )
+        embed.add_field(
+            name="Top Performing Department",
+            value=department_label,
+            inline=False,
         )
         embed.add_field(
             name=f"{department_label} Department Progress",
@@ -596,7 +775,13 @@ class CustomLBCog(commands.Cog):
         except discord.NotFound:
             pass
 
-    async def _remove_hall_of_fame_role_after_delay(self, guild, role, warning_channel, admin_role):
+    def _get_admin_role_mention(self, guild):
+        for role in sorted(guild.roles, key=lambda r: r.position, reverse=True):
+            if role.permissions.administrator:
+                return role.mention
+        return "@administrator"
+
+    async def _remove_hall_of_fame_role_after_delay(self, guild, role, warning_channel):
         db = SessionLocal()
         expired_entries = []
         try:
@@ -621,7 +806,7 @@ class CustomLBCog(commands.Cog):
             db.close()
 
         if expired_entries and warning_channel:
-            admin_mention = admin_role.mention if admin_role else "@administrator"
+            admin_mention = self._get_admin_role_mention(guild)
             try:
                 await warning_channel.send(
                     f"⚠️ The Hall of Fame period has ended. {admin_mention}"
