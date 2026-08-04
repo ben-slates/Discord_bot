@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine, Column, Integer, BigInteger, String, Boolean, DateTime, ForeignKey, Float
+from sqlalchemy import create_engine, Column, Integer, BigInteger, String, Boolean, DateTime, ForeignKey, Float, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 import datetime
 from dotenv import load_dotenv
@@ -43,6 +43,17 @@ class GuildConfig(Base):
     # Notifications
     notification_channel = Column(String, nullable=True)
     daily_summary_time = Column(String, default="00:00")
+    # Leaderboards
+    main_leaderboard_role_ids = Column(String, nullable=True)
+    # Bot logs
+    bot_logs_enabled = Column(Boolean, default=False)
+    bot_logs_channel = Column(String, nullable=True)
+    # CVE and news
+    cve_and_news_enabled = Column(Boolean, default=False)
+    cve_and_news_channel = Column(String, nullable=True)
+    # Support
+    support_feature_enabled = Column(Boolean, default=False)
+    support_category = Column(String, nullable=True)
 
 class UserData(Base):
     __tablename__ = "users"
@@ -99,6 +110,39 @@ class NewsLog(Base):
     posted_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
 
 Base.metadata.create_all(bind=engine)
+
+
+def ensure_database_columns():
+    inspector = inspect(engine)
+    if "guild_config" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("guild_config")}
+    if "main_leaderboard_role_ids" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN main_leaderboard_role_ids VARCHAR"))
+    if "bot_logs_enabled" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN bot_logs_enabled BOOLEAN DEFAULT FALSE"))
+    if "bot_logs_channel" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN bot_logs_channel VARCHAR"))
+    if "cve_and_news_enabled" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN cve_and_news_enabled BOOLEAN DEFAULT FALSE"))
+    if "cve_and_news_channel" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN cve_and_news_channel VARCHAR"))
+    if "support_feature_enabled" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN support_feature_enabled BOOLEAN DEFAULT FALSE"))
+    if "support_category" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN support_category VARCHAR"))
+
+
+ensure_database_columns()
+
 
 def get_db():
     db = SessionLocal()

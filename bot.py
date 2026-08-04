@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import os
 from dotenv import load_dotenv
+from database import SessionLocal, GuildConfig
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -47,7 +48,7 @@ class RynexBot(commands.Bot):
             
         import traceback
         err_str = "".join(traceback.format_exception(type(error), error, error.__traceback__))
-        channel = self.get_channel(1519263271943667774)
+        channel = await self._get_configured_log_channel(interaction.guild_id)
         if channel:
             try:
                 if len(err_str) > 4000:
@@ -60,7 +61,7 @@ class RynexBot(commands.Bot):
     async def on_error(self, event_method, *args, **kwargs):
         import traceback
         err_str = traceback.format_exc()
-        channel = self.get_channel(1519263271943667774)
+        channel = await self._get_configured_log_channel(None)
         if channel:
             try:
                 if len(err_str) > 4000:
@@ -69,6 +70,16 @@ class RynexBot(commands.Bot):
                 await channel.send(embed=embed)
             except:
                 pass
+
+    async def _get_configured_log_channel(self, guild_id):
+        db = SessionLocal()
+        try:
+            config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first() if guild_id is not None else None
+            if config and config.bot_logs_enabled and config.bot_logs_channel:
+                return self.get_channel(int(config.bot_logs_channel))
+            return None
+        finally:
+            db.close()
 
 bot = RynexBot()
 

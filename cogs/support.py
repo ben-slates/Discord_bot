@@ -14,8 +14,6 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     raise RuntimeError("GEMINI_API_KEY is missing. Add it to the project's .env file.")
 genai.configure(api_key=GEMINI_API_KEY)
-model_primary = genai.GenerativeModel('gemini-2.5-flash')
-model_fallback = genai.GenerativeModel('gemini-2.5-flash-lite')
 
 class TicketSupportView(discord.ui.View):
     def __init__(self):
@@ -40,6 +38,8 @@ class TicketSupportView(discord.ui.View):
 class SupportCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self._command_names = {"ticket", "adduser", "removeuser", "close", "reopen", "transcript", "closeall"}
+        self._support_command_objects = {}
         self.bot.add_view(TicketSupportView())
         self.auto_delete_tickets.start()
         self.chat_sessions = {}
@@ -84,11 +84,81 @@ class SupportCog(commands.Cog):
         finally:
             db.close()
 
+    def _get_support_config(self, guild_id):
+        db = SessionLocal()
+        try:
+            return db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
+        finally:
+            db.close()
+
+    def _is_support_enabled(self, guild_id):
+        config = self._get_support_config(guild_id)
+        return bool(config and config.support_enabled and config.support_category)
+
+    def _is_in_support_category(self, channel, guild_id):
+        if not channel or not guild_id or not getattr(channel, "guild", None):
+            return False
+        config = self._get_support_config(guild_id)
+        if not config or not config.support_enabled or not config.support_category:
+            return False
+        try:
+            return channel.category_id == int(config.support_category)
+        except (TypeError, ValueError):
+            return False
+
+    def _can_use_support_commands(self, interaction):
+        config = self._get_support_config(interaction.guild_id)
+        if not config or not config.support_enabled or not config.support_category:
+            return False
+        if not self._is_in_support_category(interaction.channel, interaction.guild_id):
+            return False
+        return True
+
+    async def _is_available_in_guild(self, guild_id):
+        if not guild_id:
+            return False
+        config = self._get_support_config(guild_id)
+        return bool(config and config.support_enabled and config.support_category)
+
+    async def sync_support_commands(self, guild_id=None):
+        if not self._support_command_objects:
+            return
+
+        target_guilds = []
+        if guild_id is not None:
+            guild = self.bot.get_guild(int(guild_id))
+            if guild:
+                target_guilds.append(guild)
+        else:
+            target_guilds = list(self.bot.guilds)
+
+        for guild in target_guilds:
+            config = self._get_support_config(guild.id)
+            enabled = bool(config and config.support_enabled and config.support_category)
+
+            for command_name, command in self._support_command_objects.items():
+                if enabled:
+                    self.bot.tree.add_command(command, guild=guild, override=True)
+                else:
+                    self.bot.tree.remove_command(command_name, guild=guild)
+
+            try:
+                await self.bot.tree.sync(guild=guild)
+            except Exception:
+                pass
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if message.author.bot or not message.guild:
             return
             
+        config = self._get_support_config(message.guild.id)
+        if not config or not config.support_enabled or not config.support_category:
+            return
+
+        if not self._is_in_support_category(message.channel, message.guild.id):
+            return
+
         if message.channel.name.startswith("ticket-"):
             import asyncio
             is_open = await asyncio.to_thread(self._is_ticket_open, message.channel.id)
@@ -108,11 +178,17 @@ class SupportCog(commands.Cog):
                     context_str = "\n".join(self.chat_sessions[history_key][-10:])
                     prompt = f"{context_str}\n\nYou are a helpful IT/Community Support AI for this Discord server. Provide a concise, helpful response based on the conversation history."
                     try:
-                        response = model_primary.generate_content(prompt)
+                        model = genai.GenerativeModel("gemini-2.5-flash")
+                        response = model.generate_content(prompt)
+                        ai_answer = getattr(response, "text", str(response))
                     except Exception as e:
                         print(f"Primary model failed ({e}), falling back to lite...")
-                        response = model_fallback.generate_content(prompt)
-                    ai_answer = response.text
+                        try:
+                            model = genai.GenerativeModel("gemini-2.5-flash-lite")
+                            response = model.generate_content(prompt)
+                            ai_answer = getattr(response, "text", str(response))
+                        except Exception as fallback_error:
+                            ai_answer = f"I'm sorry, I couldn't generate an AI response at the moment. Error: {str(fallback_error)}"
                     self.chat_sessions[history_key].append(f"AI: {ai_answer}")
                 except Exception as e:
                     ai_answer = f"I'm sorry, I couldn't generate an AI response at the moment. Error: {str(e)}"
@@ -122,13 +198,14 @@ class SupportCog(commands.Cog):
 
     # --- USER COMMANDS ---
     @app_commands.command(name="ticket", description="Open a support ticket")
+    @app_commands.checks.cooldown(1, 5, key=lambda i: (i.guild_id, i.user.id))
     async def ticket(self, interaction: discord.Interaction, reason: str = None):
         await interaction.response.defer(ephemeral=True)
         db = SessionLocal()
         try:
-            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
-            if not config or not config.support_enabled:
-                await interaction.followup.send(" Support is disabled.")
+            config = self._get_support_config(interaction.guild_id)
+            if not config or not config.support_enabled or not config.support_category:
+                await interaction.followup.send(" Support is disabled or not configured.")
                 return
 
             cat_id = config.support_category
@@ -137,6 +214,13 @@ class SupportCog(commands.Cog):
                 return
 
             category = interaction.guild.get_channel(int(cat_id))
+            if not self._can_use_support_commands(interaction):
+                await interaction.followup.send(" Support commands must be used inside the configured support category.")
+                return
+
+            if not isinstance(category, discord.CategoryChannel):
+                await interaction.followup.send(" The configured support target is not a category.")
+                return
             if not category:
                 await interaction.followup.send(" Invalid support category.")
                 return
@@ -176,6 +260,13 @@ class SupportCog(commands.Cog):
     @app_commands.default_permissions(administrator=True)
     async def adduser(self, interaction: discord.Interaction, member: discord.Member):
         await interaction.response.defer(ephemeral=True)
+        config = self._get_support_config(interaction.guild_id)
+        if not config or not config.support_enabled or not config.support_category:
+            await interaction.followup.send(" Support is disabled or not configured.")
+            return
+        if not self._is_in_support_category(interaction.channel, interaction.guild_id):
+            await interaction.followup.send(" Must be used in the configured support category.")
+            return
         if not interaction.channel.name.startswith("ticket-"):
             await interaction.followup.send(" Must be used in a ticket channel.")
             return
@@ -187,6 +278,13 @@ class SupportCog(commands.Cog):
     @app_commands.default_permissions(administrator=True)
     async def removeuser(self, interaction: discord.Interaction, member: discord.Member):
         await interaction.response.defer(ephemeral=True)
+        config = self._get_support_config(interaction.guild_id)
+        if not config or not config.support_enabled or not config.support_category:
+            await interaction.followup.send(" Support is disabled or not configured.")
+            return
+        if not self._is_in_support_category(interaction.channel, interaction.guild_id):
+            await interaction.followup.send(" Must be used in the configured support category.")
+            return
         if not interaction.channel.name.startswith("ticket-"):
             await interaction.followup.send(" Must be used in a ticket channel.")
             return
@@ -197,6 +295,13 @@ class SupportCog(commands.Cog):
     @app_commands.command(name="close", description="Close current ticket")
     async def close(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
+        config = self._get_support_config(interaction.guild_id)
+        if not config or not config.support_enabled or not config.support_category:
+            await interaction.followup.send(" Support is disabled or not configured.", ephemeral=True)
+            return
+        if not self._can_use_support_commands(interaction):
+            await interaction.followup.send(" Must be used in a support ticket channel.", ephemeral=True)
+            return
         if not interaction.channel.name.startswith("ticket-"):
             await interaction.followup.send(" Must be used in a ticket channel.", ephemeral=True)
             return
@@ -241,6 +346,13 @@ class SupportCog(commands.Cog):
     @app_commands.default_permissions(manage_messages=True)
     async def reopen(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
+        config = self._get_support_config(interaction.guild_id)
+        if not config or not config.support_enabled or not config.support_category:
+            await interaction.followup.send(" Support is disabled or not configured.", ephemeral=True)
+            return
+        if not self._can_use_support_commands(interaction):
+            await interaction.followup.send(" Must be used in a support ticket channel.", ephemeral=True)
+            return
         if not interaction.channel.name.startswith("closed-"):
             await interaction.followup.send(" This is not a closed ticket.", ephemeral=True)
             return
@@ -268,6 +380,13 @@ class SupportCog(commands.Cog):
     @app_commands.command(name="transcript", description="Admin: Download ticket transcript")
     @app_commands.default_permissions(manage_messages=True)
     async def transcript(self, interaction: discord.Interaction):
+        config = self._get_support_config(interaction.guild_id)
+        if not config or not config.support_enabled or not config.support_category:
+            await interaction.response.send_message(" Support is disabled or not configured.", ephemeral=True)
+            return
+        if not self._can_use_support_commands(interaction):
+            await interaction.response.send_message(" Must be used in a support ticket channel.", ephemeral=True)
+            return
         if not ("ticket-" in interaction.channel.name or "closed-" in interaction.channel.name):
             await interaction.response.send_message(" Must be used in a ticket channel.", ephemeral=True)
             return
@@ -286,6 +405,13 @@ class SupportCog(commands.Cog):
     @app_commands.default_permissions(administrator=True)
     async def closeall(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
+        config = self._get_support_config(interaction.guild_id)
+        if not config or not config.support_enabled or not config.support_category:
+            await interaction.followup.send(" Support is disabled or not configured.")
+            return
+        if not self._can_use_support_commands(interaction):
+            await interaction.followup.send(" Must be used in the configured support category.")
+            return
         db = SessionLocal()
         try:
             open_tickets = db.query(Ticket).filter_by(guild_id=str(interaction.guild_id), status="open").all()
@@ -319,4 +445,5 @@ class SupportCog(commands.Cog):
             db.close()
 
 async def setup(bot):
-    await bot.add_cog(SupportCog(bot))
+    cog = SupportCog(bot)
+    await bot.add_cog(cog)

@@ -5,7 +5,7 @@ import discord
 from dotenv import load_dotenv
 from discord.ext import commands
 from discord import app_commands
-from database import SessionLocal, CustomLeaderboard, HallOfFameEntry
+from database import SessionLocal, CustomLeaderboard, HallOfFameEntry, GuildConfig
 
 load_dotenv()
 
@@ -56,6 +56,182 @@ HALL_OF_FAME_DEPARTMENTS = {
 class CustomLBCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
+    @app_commands.command(name="set_leaderboard", description="Admin:Set one role that qualifies for the main leaderboard")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(role="The single role that should qualify for the main leaderboard")
+    async def set_leaderboard(self, interaction: discord.Interaction, role: discord.Role = None):
+        db = SessionLocal()
+        try:
+            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            if not config:
+                config = GuildConfig(guild_id=str(interaction.guild_id))
+                db.add(config)
+
+            if role is None:
+                config.main_leaderboard_role_ids = None
+                db.commit()
+                await interaction.response.send_message("Main leaderboard role cleared.", ephemeral=True)
+                return
+
+            config.main_leaderboard_role_ids = str(role.id)
+            db.commit()
+            await interaction.response.send_message(
+                f"Main leaderboard role updated to {role.name}.",
+                ephemeral=True,
+            )
+        finally:
+            db.close()
+
+    @app_commands.command(name="enable", description="Admin:Enable a feature for this server")
+    @app_commands.choices(
+        option=[
+            app_commands.Choice(name="Bot Logs", value="bot_logs"),
+            app_commands.Choice(name="CVE and News", value="cve_and_news"),
+            app_commands.Choice(name="Support", value="support"),
+        ]
+    )
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(option="The feature to enable", channel="The channel/category to use for this feature")
+    async def enable_feature(self, interaction: discord.Interaction, option: app_commands.Choice[str], channel: discord.abc.GuildChannel):
+        db = SessionLocal()
+        try:
+            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            if not config:
+                config = GuildConfig(guild_id=str(interaction.guild_id))
+                db.add(config)
+
+            if option.value == "bot_logs":
+                if not isinstance(channel, discord.TextChannel):
+                    await interaction.response.send_message("Bot logs must use a text channel.", ephemeral=True)
+                    return
+                config.bot_logs_enabled = True
+                config.bot_logs_channel = str(channel.id)
+                db.commit()
+                await interaction.response.send_message(f"Bot logs enabled for {channel.mention}.", ephemeral=True)
+                return
+
+            if option.value == "cve_and_news":
+                if not isinstance(channel, discord.TextChannel):
+                    await interaction.response.send_message("CVE and News must use a text channel.", ephemeral=True)
+                    return
+                config.cve_and_news_enabled = True
+                config.cve_and_news_channel = str(channel.id)
+                db.commit()
+                await interaction.response.send_message(f"CVE and News enabled for {channel.mention}.", ephemeral=True)
+                return
+
+            if option.value == "support":
+                if not isinstance(channel, discord.CategoryChannel):
+                    await interaction.response.send_message("Support must be enabled with a category.", ephemeral=True)
+                    return
+                config.support_enabled = True
+                config.support_category = str(channel.id)
+                db.commit()
+                await interaction.response.send_message(f"Support enabled for category {channel.mention}.", ephemeral=True)
+                return
+
+            await interaction.response.send_message("That option is not supported yet.", ephemeral=True)
+        finally:
+            db.close()
+
+    @app_commands.command(name="disable", description="Admin:Disable a feature for this server")
+    @app_commands.choices(
+        option=[
+            app_commands.Choice(name="Bot Logs", value="bot_logs"),
+            app_commands.Choice(name="CVE and News", value="cve_and_news"),
+            app_commands.Choice(name="Support", value="support"),
+        ]
+    )
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(option="The feature to disable")
+    async def disable_feature(self, interaction: discord.Interaction, option: app_commands.Choice[str]):
+        db = SessionLocal()
+        try:
+            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            if not config:
+                config = GuildConfig(guild_id=str(interaction.guild_id))
+                db.add(config)
+
+            if option.value == "bot_logs":
+                config.bot_logs_enabled = False
+                config.bot_logs_channel = None
+                db.commit()
+                await interaction.response.send_message("Bot logs disabled.", ephemeral=True)
+                return
+
+            if option.value == "cve_and_news":
+                config.cve_and_news_enabled = False
+                config.cve_and_news_channel = None
+                db.commit()
+                await interaction.response.send_message("CVE and News disabled.", ephemeral=True)
+                return
+
+            if option.value == "support":
+                config.support_enabled = False
+                config.support_category = None
+                db.commit()
+                await interaction.response.send_message("Support disabled.", ephemeral=True)
+                return
+
+            await interaction.response.send_message("That option is not supported yet.", ephemeral=True)
+        finally:
+            db.close()
+
+    @app_commands.command(name="test", description="Admin:Send a test message to verify an enabled feature")
+    @app_commands.choices(
+        option=[
+            app_commands.Choice(name="Bot Logs", value="bot_logs"),
+            app_commands.Choice(name="CVE and News", value="cve_and_news"),
+        ]
+    )
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(option="The feature to test")
+    async def test_feature(self, interaction: discord.Interaction, option: app_commands.Choice[str]):
+        db = SessionLocal()
+        try:
+            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            if option.value == "bot_logs":
+                if not config or not config.bot_logs_enabled or not config.bot_logs_channel:
+                    await interaction.response.send_message("Bot logs are not enabled for this server yet.", ephemeral=True)
+                    return
+
+                channel = interaction.guild.get_channel(int(config.bot_logs_channel))
+                if not channel:
+                    await interaction.response.send_message("The configured bot logs channel could not be found.", ephemeral=True)
+                    return
+
+                try:
+                    await channel.send(f"✅ Bot logs test message from {interaction.user.mention}")
+                except discord.Forbidden:
+                    await interaction.response.send_message("I do not have permission to send messages to that channel.", ephemeral=True)
+                    return
+
+                await interaction.response.send_message("Test message sent successfully.", ephemeral=True)
+                return
+
+            if option.value == "cve_and_news":
+                if not config or not config.cve_and_news_enabled or not config.cve_and_news_channel:
+                    await interaction.response.send_message("CVE and News are not enabled for this server yet.", ephemeral=True)
+                    return
+
+                channel = interaction.guild.get_channel(int(config.cve_and_news_channel))
+                if not channel:
+                    await interaction.response.send_message("The configured CVE and News channel could not be found.", ephemeral=True)
+                    return
+
+                try:
+                    await channel.send(f"✅ CVE and News test message from {interaction.user.mention}")
+                except discord.Forbidden:
+                    await interaction.response.send_message("I do not have permission to send messages to that channel.", ephemeral=True)
+                    return
+
+                await interaction.response.send_message("Test message sent successfully.", ephemeral=True)
+                return
+
+            await interaction.response.send_message("That option is not supported yet.", ephemeral=True)
+        finally:
+            db.close()
 
     @app_commands.command(name="add_leaderboard", description="Admin:Add a custom daily leaderboard to a channel")
     @app_commands.default_permissions(administrator=True)

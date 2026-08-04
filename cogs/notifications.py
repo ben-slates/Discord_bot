@@ -3,7 +3,11 @@ from discord.ext import commands, tasks
 from discord import app_commands
 import datetime
 from database import SessionLocal, GuildConfig, UserData, AttendanceLog, CustomLeaderboard
-from utils.leaderboard import should_include_member_for_custom_leaderboard
+from utils.leaderboard import (
+    get_main_leaderboard_role_ids,
+    should_include_member_for_custom_leaderboard,
+    should_include_member_for_main_leaderboard,
+)
 
 class NotificationsCog(commands.Cog):
     def __init__(self, bot):
@@ -41,7 +45,17 @@ class NotificationsCog(commands.Cog):
                             print(f"Failed to delete old leaderboard: {delete_err}")
 
                         embed = discord.Embed(title="Morning Leaderboard Update", description="Top 10 users by total XP.", color=discord.Color.gold())
-                        top_users = db.query(UserData).order_by(UserData.xp.desc()).limit(10).all()
+                        allowed_role_ids = get_main_leaderboard_role_ids(db, config.guild_id)
+                        top_users = []
+                        for user in db.query(UserData).order_by(UserData.xp.desc()).all():
+                            member = guild.get_member(user.user_id)
+                            if not member or member.bot:
+                                continue
+                            if not should_include_member_for_main_leaderboard(member, allowed_role_ids):
+                                continue
+                            top_users.append(user)
+                            if len(top_users) >= 10:
+                                break
                         
                         if not top_users:
                             embed.description = "No XP data yet!"

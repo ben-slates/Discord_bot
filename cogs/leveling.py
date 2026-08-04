@@ -7,7 +7,11 @@ import datetime
 from database import SessionLocal, GuildConfig, UserData, CustomLeaderboard, AttendanceLog
 import sys
 import os
-from utils.leaderboard import should_include_member_for_custom_leaderboard
+from utils.leaderboard import (
+    get_main_leaderboard_role_ids,
+    should_include_member_for_custom_leaderboard,
+    should_include_member_for_main_leaderboard,
+)
 
 DEFAULT_LEVELING_CHANNEL_ID = 1519264254178623488
 
@@ -194,15 +198,25 @@ class LevelingCog(commands.Cog):
                 await interaction.response.send_message("This command can only be used in <#1519264254178623488>.", ephemeral=True)
                 return
             
-            users = db.query(UserData).order_by(UserData.xp.desc()).limit(10).all()
+            allowed_role_ids = get_main_leaderboard_role_ids(db, interaction.guild_id)
+            ranked_users = []
+            for user in db.query(UserData).order_by(UserData.xp.desc()).all():
+                discord_user = interaction.guild.get_member(user.user_id)
+                if not discord_user or discord_user.bot:
+                    continue
+                if not should_include_member_for_main_leaderboard(discord_user, allowed_role_ids):
+                    continue
+                ranked_users.append(user)
+                if len(ranked_users) >= 10:
+                    break
             
             embed = discord.Embed(title="Community Leaderboard", description="Top 10 users by total XP.", color=discord.Color.gold())
-            if not users:
+            if not ranked_users:
                 embed.description = "No leaderboard data is available yet."
                 await interaction.response.send_message(embed=embed)
                 return
             
-            for index, u in enumerate(users, start=1):
+            for index, u in enumerate(ranked_users, start=1):
                 discord_user = interaction.guild.get_member(u.user_id)
                 name = discord_user.display_name if discord_user else f"Unknown ({u.user_id})"
                 prefix = f"#{index}"
