@@ -47,6 +47,9 @@ class GuildConfig(Base):
     main_leaderboard_role_ids = Column(String, nullable=True)
     leaderboard_enabled = Column(Boolean, default=False)
     leaderboard_channel = Column(String, nullable=True)
+    # Level-up announcements
+    level_up_announcements_enabled = Column(Boolean, default=False)
+    level_up_announcements_channel = Column(String, nullable=True)
     # Bot logs
     bot_logs_enabled = Column(Boolean, default=False)
     bot_logs_channel = Column(String, nullable=True)
@@ -147,6 +150,12 @@ def ensure_database_columns():
     if "leaderboard_channel" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN leaderboard_channel VARCHAR"))
+    if "level_up_announcements_enabled" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN level_up_announcements_enabled BOOLEAN DEFAULT FALSE"))
+    if "level_up_announcements_channel" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN level_up_announcements_channel VARCHAR"))
 
 
 ensure_database_columns()

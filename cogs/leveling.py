@@ -109,10 +109,18 @@ class LevelingCog(commands.Cog):
         )
         
         if level_up:
-            target_channel_id = leveling_channel or str(DEFAULT_LEVELING_CHANNEL_ID)
-            ch = message.guild.get_channel(int(target_channel_id))
-            if ch:
-                await self.send_level_up_announcement(message.author, new_level, current_xp, ch)
+            db = SessionLocal()
+            try:
+                config = db.query(GuildConfig).filter_by(guild_id=str(message.guild.id)).first()
+                if not config or not getattr(config, "level_up_announcements_enabled", False):
+                    return
+
+                target_channel_id = getattr(config, "level_up_announcements_channel", None) or leveling_channel or str(DEFAULT_LEVELING_CHANNEL_ID)
+                ch = message.guild.get_channel(int(target_channel_id))
+                if ch:
+                    await self.send_level_up_announcement(message.author, new_level, current_xp, ch)
+            finally:
+                db.close()
 
     @app_commands.command(name="rank", description="Check your rank")
     async def rank(self, interaction: discord.Interaction, member: discord.Member = None):
@@ -357,10 +365,17 @@ class LevelingCog(commands.Cog):
                 if guild:
                     member = guild.get_member(user_id)
                     if member:
-                        target_ch_id = ch_id or str(DEFAULT_LEVELING_CHANNEL_ID)
-                        ch = guild.get_channel(int(target_ch_id))
-                        if ch:
-                            await self.send_level_up_announcement(member, new_level, current_xp, ch)
+                        config_db = SessionLocal()
+                        try:
+                            config = config_db.query(GuildConfig).filter_by(guild_id=str(guild.id)).first()
+                            if not config or not getattr(config, "level_up_announcements_enabled", False):
+                                continue
+                            target_ch_id = getattr(config, "level_up_announcements_channel", None) or ch_id or str(DEFAULT_LEVELING_CHANNEL_ID)
+                            ch = guild.get_channel(int(target_ch_id))
+                            if ch:
+                                await self.send_level_up_announcement(member, new_level, current_xp, ch)
+                        finally:
+                            config_db.close()
 
     @voice_xp_loop.before_loop
     async def before_voice_xp(self):

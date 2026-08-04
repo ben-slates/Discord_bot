@@ -108,6 +108,7 @@ class CustomLBCog(commands.Cog):
             app_commands.Choice(name="CVE and News", value="cve_and_news"),
             app_commands.Choice(name="Support", value="support"),
             app_commands.Choice(name="Leaderboard", value="leaderboard"),
+            app_commands.Choice(name="Level Up Announcements", value="level_up_announcements"),
         ]
     )
     @app_commands.default_permissions(administrator=True)
@@ -160,6 +161,16 @@ class CustomLBCog(commands.Cog):
                 await interaction.response.send_message(f"Leaderboard enabled for {channel.mention}.", ephemeral=True)
                 return
 
+            if option.value == "level_up_announcements":
+                if not isinstance(channel, discord.TextChannel):
+                    await interaction.response.send_message("Level-up announcements must use a text channel.", ephemeral=True)
+                    return
+                config.level_up_announcements_enabled = True
+                config.level_up_announcements_channel = str(channel.id)
+                db.commit()
+                await interaction.response.send_message(f"Level-up announcements enabled for {channel.mention}.", ephemeral=True)
+                return
+
             await interaction.response.send_message("That option is not supported yet.", ephemeral=True)
         finally:
             db.close()
@@ -171,6 +182,7 @@ class CustomLBCog(commands.Cog):
             app_commands.Choice(name="CVE and News", value="cve_and_news"),
             app_commands.Choice(name="Support", value="support"),
             app_commands.Choice(name="Leaderboard", value="leaderboard"),
+            app_commands.Choice(name="Level Up Announcements", value="level_up_announcements"),
         ]
     )
     @app_commands.default_permissions(administrator=True)
@@ -211,6 +223,13 @@ class CustomLBCog(commands.Cog):
                 await interaction.response.send_message("Leaderboard disabled.", ephemeral=True)
                 return
 
+            if option.value == "level_up_announcements":
+                config.level_up_announcements_enabled = False
+                config.level_up_announcements_channel = None
+                db.commit()
+                await interaction.response.send_message("Level-up announcements disabled.", ephemeral=True)
+                return
+
             await interaction.response.send_message("That option is not supported yet.", ephemeral=True)
         finally:
             db.close()
@@ -221,6 +240,7 @@ class CustomLBCog(commands.Cog):
             app_commands.Choice(name="Bot Logs", value="bot_logs"),
             app_commands.Choice(name="CVE and News", value="cve_and_news"),
             app_commands.Choice(name="Leaderboard", value="leaderboard"),
+            app_commands.Choice(name="Level Up Announcements", value="level_up_announcements"),
         ]
     )
     @app_commands.default_permissions(administrator=True)
@@ -284,6 +304,39 @@ class CustomLBCog(commands.Cog):
                     return
 
                 await interaction.response.send_message("Test message sent successfully.", ephemeral=True)
+                return
+
+            if option.value == "level_up_announcements":
+                if not config or not config.level_up_announcements_enabled or not config.level_up_announcements_channel:
+                    await interaction.response.send_message("Level-up announcements are not enabled for this server yet.", ephemeral=True)
+                    return
+
+                channel = interaction.guild.get_channel(int(config.level_up_announcements_channel))
+                if not channel:
+                    await interaction.response.send_message("The configured level-up announcements channel could not be found.", ephemeral=True)
+                    return
+
+                try:
+                    import os
+                    import sys
+                    sys.path.append(os.path.join(os.path.dirname(__file__), "..", "utils"))
+                    from rankcard import generate_levelup_card
+
+                    card_file = await generate_levelup_card(
+                        interaction.user,
+                        100,
+                        max_level=100,
+                        previous_level=99,
+                    )
+                    await channel.send(f"✅ Level-up announcement test for {interaction.user.mention}", file=card_file)
+                except discord.Forbidden:
+                    await interaction.response.send_message("I do not have permission to send messages to that channel.", ephemeral=True)
+                    return
+                except Exception as e:
+                    await interaction.response.send_message(f"Could not send the level-up test card: {e}", ephemeral=True)
+                    return
+
+                await interaction.response.send_message("Level-up test card sent successfully.", ephemeral=True)
                 return
 
             await interaction.response.send_message("That option is not supported yet.", ephemeral=True)
