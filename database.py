@@ -45,6 +45,8 @@ class GuildConfig(Base):
     daily_summary_time = Column(String, default="00:00")
     # Leaderboards
     main_leaderboard_role_ids = Column(String, nullable=True)
+    leaderboard_enabled = Column(Boolean, default=False)
+    leaderboard_channel = Column(String, nullable=True)
     # Bot logs
     bot_logs_enabled = Column(Boolean, default=False)
     bot_logs_channel = Column(String, nullable=True)
@@ -139,6 +141,12 @@ def ensure_database_columns():
     if "support_category" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN support_category VARCHAR"))
+    if "leaderboard_enabled" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN leaderboard_enabled BOOLEAN DEFAULT FALSE"))
+    if "leaderboard_channel" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN leaderboard_channel VARCHAR"))
 
 
 ensure_database_columns()

@@ -4,6 +4,7 @@ from discord import app_commands
 import datetime
 from database import SessionLocal, GuildConfig, UserData, AttendanceLog, CustomLeaderboard
 from utils.leaderboard import (
+    get_leaderboard_channel_id,
     get_main_leaderboard_role_ids,
     should_include_member_for_custom_leaderboard,
     should_include_member_for_main_leaderboard,
@@ -31,8 +32,12 @@ class NotificationsCog(commands.Cog):
                     continue
                 
                 # Morning Leaderboard at 08:00
-                if current_time_str == "08:00" and config.leveling_enabled and config.notification_channel:
-                    channel = guild.get_channel(int(config.notification_channel))
+                if current_time_str == "08:00" and config.leaderboard_enabled:
+                    leaderboard_channel_id = get_leaderboard_channel_id(config)
+                    if leaderboard_channel_id:
+                        channel = guild.get_channel(int(leaderboard_channel_id))
+                    else:
+                        channel = None
                     if channel:
                         # Delete the previous leaderboard message to keep the channel clean
                         try:

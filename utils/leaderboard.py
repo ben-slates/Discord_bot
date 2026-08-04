@@ -1,6 +1,14 @@
 from database import GuildConfig
 
 
+def get_leaderboard_channel_id(config) -> str | None:
+    if not config:
+        return None
+    if not getattr(config, "leaderboard_enabled", False):
+        return None
+    return getattr(config, "leaderboard_channel", None)
+
+
 def should_include_member_for_custom_leaderboard(member) -> bool:
     role_names = [role.name.lower() for role in getattr(member, "roles", [])]
     return any("batch 1" in role_name or "batch1" in role_name for role_name in role_names)

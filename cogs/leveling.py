@@ -8,6 +8,7 @@ from database import SessionLocal, GuildConfig, UserData, CustomLeaderboard, Att
 import sys
 import os
 from utils.leaderboard import (
+    get_leaderboard_channel_id,
     get_main_leaderboard_role_ids,
     should_include_member_for_custom_leaderboard,
     should_include_member_for_main_leaderboard,
@@ -115,12 +116,18 @@ class LevelingCog(commands.Cog):
 
     @app_commands.command(name="rank", description="Check your rank")
     async def rank(self, interaction: discord.Interaction, member: discord.Member = None):
-        if interaction.channel_id != 1519264254178623488:
-            await interaction.response.send_message("This command can only be used in <#1519264254178623488>.", ephemeral=True)
-            return
-        member = member or interaction.user
         db = SessionLocal()
         try:
+            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            channel_id = get_leaderboard_channel_id(config)
+            if not channel_id:
+                await interaction.response.send_message("Leaderboard is not enabled for this server.", ephemeral=True)
+                return
+            if str(interaction.channel_id) != channel_id:
+                await interaction.response.send_message(f"This command can only be used in <#{channel_id}>.", ephemeral=True)
+                return
+
+            member = member or interaction.user
             user = self.get_user(db, member.id)
             
             all_users = db.query(UserData).order_by(UserData.xp.desc()).all()
@@ -152,6 +159,15 @@ class LevelingCog(commands.Cog):
     async def leaderboard(self, interaction: discord.Interaction):
         db = SessionLocal()
         try:
+            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            channel_id = get_leaderboard_channel_id(config)
+            if not channel_id:
+                await interaction.response.send_message("Leaderboard is not enabled for this server.", ephemeral=True)
+                return
+            if str(interaction.channel_id) != channel_id:
+                await interaction.response.send_message(f"This command can only be used in <#{channel_id}>.", ephemeral=True)
+                return
+
             custom_lb = db.query(CustomLeaderboard).filter_by(channel_id=str(interaction.channel_id)).first()
             if custom_lb:
                 scores = []
@@ -193,10 +209,6 @@ class LevelingCog(commands.Cog):
                         )
                 await interaction.response.send_message(embed=embed)
                 return
-
-            if interaction.channel_id != 1519264254178623488:
-                await interaction.response.send_message("This command can only be used in <#1519264254178623488>.", ephemeral=True)
-                return
             
             allowed_role_ids = get_main_leaderboard_role_ids(db, interaction.guild_id)
             ranked_users = []
@@ -234,26 +246,36 @@ class LevelingCog(commands.Cog):
 
     @app_commands.command(name="rankcard", description="Generate a rank card image.")
     async def rankcard(self, interaction: discord.Interaction, member: discord.Member = None):
-        if interaction.channel_id != 1519264254178623488:
-            await interaction.response.send_message("This command can only be used in <#1519264254178623488>.", ephemeral=True)
-            return
-        await interaction.response.defer()
-        target = member or interaction.user
-        
+        db = SessionLocal()
         try:
-            sys.path.append(os.path.join(os.path.dirname(__file__), "..", "utils"))
-            from rankcard import generate_rank_card
+            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            channel_id = get_leaderboard_channel_id(config)
+            if not channel_id:
+                await interaction.response.send_message("Leaderboard is not enabled for this server.", ephemeral=True)
+                return
+            if str(interaction.channel_id) != channel_id:
+                await interaction.response.send_message(f"This command can only be used in <#{channel_id}>.", ephemeral=True)
+                return
+
+            await interaction.response.defer()
+            target = member or interaction.user
             
-            level, xp, rank_pos, daily_xp, daily_limit, _ = await asyncio.to_thread(self._get_card_data, interaction.guild_id, target.id)
-            file = await generate_rank_card(
-                target, level, xp, rank_pos, daily_xp, daily_limit, 100,
-                profile_title=interaction.guild.name if interaction.guild else "Community Profile",
-            )
-            await interaction.followup.send(file=file)
-        except ImportError:
-            await interaction.followup.send("The rankcard module could not be loaded. Please ensure Pillow is installed.", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"Error generating rank card: {e}", ephemeral=True)
+            try:
+                sys.path.append(os.path.join(os.path.dirname(__file__), "..", "utils"))
+                from rankcard import generate_rank_card
+                
+                level, xp, rank_pos, daily_xp, daily_limit, _ = await asyncio.to_thread(self._get_card_data, interaction.guild_id, target.id)
+                file = await generate_rank_card(
+                    target, level, xp, rank_pos, daily_xp, daily_limit, 100,
+                    profile_title=interaction.guild.name if interaction.guild else "Community Profile",
+                )
+                await interaction.followup.send(file=file)
+            except ImportError:
+                await interaction.followup.send("The rankcard module could not be loaded. Please ensure Pillow is installed.", ephemeral=True)
+            except Exception as e:
+                await interaction.followup.send(f"Error generating rank card: {e}", ephemeral=True)
+        finally:
+            db.close()
 
     def _batch_add_voice_xp(self, voice_users):
         db = SessionLocal()

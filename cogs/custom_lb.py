@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from discord.ext import commands
 from discord import app_commands
 from database import SessionLocal, CustomLeaderboard, HallOfFameEntry, GuildConfig
+from utils.leaderboard import get_leaderboard_channel_id
 
 load_dotenv()
 
@@ -57,16 +58,33 @@ class CustomLBCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    async def _require_leaderboard_channel(self, interaction: discord.Interaction, db):
+        config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+        if not config:
+            config = GuildConfig(guild_id=str(interaction.guild_id))
+            db.add(config)
+            db.commit()
+
+        channel_id = get_leaderboard_channel_id(config)
+        if not channel_id:
+            await interaction.response.send_message("Leaderboard is not enabled for this server.", ephemeral=True)
+            return None
+
+        if str(interaction.channel_id) != channel_id:
+            await interaction.response.send_message(f"This command can only be used in <#{channel_id}>.", ephemeral=True)
+            return None
+
+        return config
+
     @app_commands.command(name="set_leaderboard", description="Admin:Set one role that qualifies for the main leaderboard")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(role="The single role that should qualify for the main leaderboard")
     async def set_leaderboard(self, interaction: discord.Interaction, role: discord.Role = None):
         db = SessionLocal()
         try:
-            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            config = await self._require_leaderboard_channel(interaction, db)
             if not config:
-                config = GuildConfig(guild_id=str(interaction.guild_id))
-                db.add(config)
+                return
 
             if role is None:
                 config.main_leaderboard_role_ids = None
@@ -89,6 +107,7 @@ class CustomLBCog(commands.Cog):
             app_commands.Choice(name="Bot Logs", value="bot_logs"),
             app_commands.Choice(name="CVE and News", value="cve_and_news"),
             app_commands.Choice(name="Support", value="support"),
+            app_commands.Choice(name="Leaderboard", value="leaderboard"),
         ]
     )
     @app_commands.default_permissions(administrator=True)
@@ -131,6 +150,16 @@ class CustomLBCog(commands.Cog):
                 await interaction.response.send_message(f"Support enabled for category {channel.mention}.", ephemeral=True)
                 return
 
+            if option.value == "leaderboard":
+                if not isinstance(channel, discord.TextChannel):
+                    await interaction.response.send_message("Leaderboard must use a text channel.", ephemeral=True)
+                    return
+                config.leaderboard_enabled = True
+                config.leaderboard_channel = str(channel.id)
+                db.commit()
+                await interaction.response.send_message(f"Leaderboard enabled for {channel.mention}.", ephemeral=True)
+                return
+
             await interaction.response.send_message("That option is not supported yet.", ephemeral=True)
         finally:
             db.close()
@@ -141,6 +170,7 @@ class CustomLBCog(commands.Cog):
             app_commands.Choice(name="Bot Logs", value="bot_logs"),
             app_commands.Choice(name="CVE and News", value="cve_and_news"),
             app_commands.Choice(name="Support", value="support"),
+            app_commands.Choice(name="Leaderboard", value="leaderboard"),
         ]
     )
     @app_commands.default_permissions(administrator=True)
@@ -174,6 +204,13 @@ class CustomLBCog(commands.Cog):
                 await interaction.response.send_message("Support disabled.", ephemeral=True)
                 return
 
+            if option.value == "leaderboard":
+                config.leaderboard_enabled = False
+                config.leaderboard_channel = None
+                db.commit()
+                await interaction.response.send_message("Leaderboard disabled.", ephemeral=True)
+                return
+
             await interaction.response.send_message("That option is not supported yet.", ephemeral=True)
         finally:
             db.close()
@@ -183,6 +220,7 @@ class CustomLBCog(commands.Cog):
         option=[
             app_commands.Choice(name="Bot Logs", value="bot_logs"),
             app_commands.Choice(name="CVE and News", value="cve_and_news"),
+            app_commands.Choice(name="Leaderboard", value="leaderboard"),
         ]
     )
     @app_commands.default_permissions(administrator=True)
@@ -229,15 +267,40 @@ class CustomLBCog(commands.Cog):
                 await interaction.response.send_message("Test message sent successfully.", ephemeral=True)
                 return
 
+            if option.value == "leaderboard":
+                if not config or not config.leaderboard_enabled or not config.leaderboard_channel:
+                    await interaction.response.send_message("Leaderboard is not enabled for this server yet.", ephemeral=True)
+                    return
+
+                channel = interaction.guild.get_channel(int(config.leaderboard_channel))
+                if not channel:
+                    await interaction.response.send_message("The configured leaderboard channel could not be found.", ephemeral=True)
+                    return
+
+                try:
+                    await channel.send(f"✅ Leaderboard test message from {interaction.user.mention}")
+                except discord.Forbidden:
+                    await interaction.response.send_message("I do not have permission to send messages to that channel.", ephemeral=True)
+                    return
+
+                await interaction.response.send_message("Test message sent successfully.", ephemeral=True)
+                return
+
             await interaction.response.send_message("That option is not supported yet.", ephemeral=True)
         finally:
             db.close()
 
-    @app_commands.command(name="add_leaderboard", description="Admin:Add a custom daily leaderboard to a channel")
+    @app_commands.command(name="add_custom_leaderboard", description="Admin:Add a custom daily leaderboard to a channel")
     @app_commands.default_permissions(administrator=True)
-    async def add_leaderboard(self, interaction: discord.Interaction, channel: discord.TextChannel, name: str):
+    async def add_custom_leaderboard(self, interaction: discord.Interaction, channel: discord.TextChannel, name: str):
         db = SessionLocal()
         try:
+            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            if not config:
+                config = GuildConfig(guild_id=str(interaction.guild_id))
+                db.add(config)
+                db.commit()
+
             lb = db.query(CustomLeaderboard).filter_by(channel_id=str(channel.id)).first()
             if not lb:
                 lb = CustomLeaderboard(channel_id=str(channel.id), guild_id=str(interaction.guild_id), name=name)
@@ -252,11 +315,17 @@ class CustomLBCog(commands.Cog):
         finally:
             db.close()
 
-    @app_commands.command(name="remove_leaderboard", description="Admin:Remove a custom leaderboard from a channel")
+    @app_commands.command(name="remove_custom_leaderboard", description="Admin:Remove a custom leaderboard from a channel")
     @app_commands.default_permissions(administrator=True)
-    async def remove_leaderboard(self, interaction: discord.Interaction, channel: discord.TextChannel):
+    async def remove_custom_leaderboard(self, interaction: discord.Interaction, channel: discord.TextChannel):
         db = SessionLocal()
         try:
+            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            if not config:
+                config = GuildConfig(guild_id=str(interaction.guild_id))
+                db.add(config)
+                db.commit()
+
             lb = db.query(CustomLeaderboard).filter_by(channel_id=str(channel.id)).first()
             if not lb:
                 await interaction.response.send_message(
