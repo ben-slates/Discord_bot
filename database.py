@@ -87,23 +87,35 @@ class BufferedSession:
         self._pending_operations = []
 
     def add(self, instance):
-        self._pending_operations.append(("add", self._serialize_instance(instance)))
+        self._session.add(instance)
 
     def delete(self, instance):
-        self._pending_operations.append(("delete", self._serialize_instance(instance)))
+        self._session.delete(instance)
 
     def commit(self):
-        if self._pending_operations:
-            operations = _load_buffered_writes()
-            operations.extend(self._pending_operations)
+        operations = _load_buffered_writes()
+        pending_operations = []
+
+        for instance in list(self._session.new):
+            pending_operations.append(("add", self._serialize_instance(instance)))
+
+        for instance in list(self._session.dirty):
+            if instance in self._session.deleted:
+                continue
+            pending_operations.append(("update", self._serialize_instance(instance)))
+
+        for instance in list(self._session.deleted):
+            pending_operations.append(("delete", self._serialize_instance(instance)))
+
+        if pending_operations:
+            operations.extend(pending_operations)
             _save_buffered_writes(operations)
-            self._pending_operations.clear()
+
         self._session.rollback()
         self._session.expunge_all()
 
     def rollback(self):
         self._session.rollback()
-        self._pending_operations.clear()
 
     def close(self):
         self._session.close()
@@ -178,7 +190,7 @@ def flush_pending_changes_to_db():
                 query.delete(synchronize_session=False)
                 continue
 
-            if operation_type == "add":
+            if operation_type in {"add", "update"}:
                 values = payload.get("values", {}) or {}
                 instance = model_class()
                 for key, value in values.items():

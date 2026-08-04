@@ -49,7 +49,9 @@ class NewsCog(commands.Cog):
             db.add(NewsLog(link=link, posted_at=posted_dt))
 
         cutoff = now - datetime.timedelta(days=7)
-        db.query(NewsLog).filter(NewsLog.posted_at < cutoff).delete(synchronize_session=False)
+        old_logs = db.query(NewsLog).filter(NewsLog.posted_at < cutoff).all()
+        for old_log in old_logs:
+            db.delete(old_log)
         db.commit()
 
         mark_flushed(CACHE_NAME, now)
