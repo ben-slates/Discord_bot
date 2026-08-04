@@ -193,7 +193,7 @@ class LevelingCog(commands.Cog):
                     for member in channel.members:
                         if member.bot: continue
                         
-                        if not should_include_member_for_custom_leaderboard(member):
+                        if not should_include_member_for_custom_leaderboard(member, required_role_ids=[lb.required_role_id] if lb.required_role_id else []): # type: ignore
                             continue
                         
                         user = user_map.get(member.id)
@@ -270,7 +270,7 @@ class LevelingCog(commands.Cog):
             
             try:
                 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "utils"))
-                from rankcard import generate_rank_card
+                from rankcard import generate_rank_card # type: ignore
                 
                 level, xp, rank_pos, daily_xp, daily_limit, _ = await asyncio.to_thread(self._get_card_data, interaction.guild_id, target.id)
                 file = await generate_rank_card(
@@ -318,7 +318,7 @@ class LevelingCog(commands.Cog):
     async def send_level_up_announcement(self, member: discord.Member, new_level: int, current_xp: int, channel: discord.TextChannel):
         try:
             sys.path.append(os.path.join(os.path.dirname(__file__), "..", "utils"))
-            from rankcard import generate_levelup_card
+            from rankcard import generate_levelup_card # type: ignore
             
             card_file = await generate_levelup_card(
                 member,

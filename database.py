@@ -1,7 +1,10 @@
 import os
-from sqlalchemy import create_engine, Column, Integer, BigInteger, String, Boolean, DateTime, ForeignKey, Float, inspect, text
-from sqlalchemy.orm import declarative_base, sessionmaker
+import json
 import datetime
+from typing import Any
+from sqlalchemy import create_engine, Column, Integer, BigInteger, String, Boolean, DateTime, ForeignKey, Float, inspect, text
+from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.orm import declarative_base, sessionmaker
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -12,13 +15,185 @@ elif DB_URL.startswith("postgres://"):
     DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
 
 engine = create_engine(
-    DB_URL, 
+    DB_URL,
     connect_args={"check_same_thread": False} if "sqlite" in DB_URL else {"connect_timeout": 10},
     pool_pre_ping=True,
-    pool_recycle=1800
+    pool_recycle=1800,
 )
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+_RAW_SESSION_FACTORY = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+CACHE_DIR = os.path.join(os.path.dirname(__file__), "cache")
+BUFFERED_WRITES_FILE = os.path.join(CACHE_DIR, "buffered_writes.json")
+
+
+def _ensure_cache_dir():
+    os.makedirs(CACHE_DIR, exist_ok=True)
+
+
+def _load_buffered_writes():
+    _ensure_cache_dir()
+    if not os.path.exists(BUFFERED_WRITES_FILE):
+        return []
+    try:
+        with open(BUFFERED_WRITES_FILE, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+            return data if isinstance(data, list) else []
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def _save_buffered_writes(operations):
+    _ensure_cache_dir()
+    with open(BUFFERED_WRITES_FILE, "w", encoding="utf-8") as handle:
+        json.dump(operations, handle, indent=2)
+
+
+def _serialize_value(value: Any):
+    if isinstance(value, datetime.datetime):
+        return value.isoformat()
+    if isinstance(value, datetime.date):
+        return value.isoformat()
+    if isinstance(value, datetime.time):
+        return value.isoformat()
+    if isinstance(value, (list, tuple, set)):
+        return [_serialize_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _serialize_value(item) for key, item in value.items()}
+    return value
+
+
+def _restore_value(value: Any):
+    if isinstance(value, str):
+        try:
+            if "T" in value or " " in value:
+                return datetime.datetime.fromisoformat(value)
+        except ValueError:
+            pass
+    return value
+
+
+def _get_model_class(model_name: str):
+    for cls in Base.registry._class_registry.values():
+        if getattr(cls, "__name__", None) == model_name and hasattr(cls, "__tablename__"):
+            return cls
+    return None
+
+
+class BufferedSession:
+    def __init__(self, session):
+        self._session = session
+        self._pending_operations = []
+
+    def add(self, instance):
+        self._pending_operations.append(("add", self._serialize_instance(instance)))
+
+    def delete(self, instance):
+        self._pending_operations.append(("delete", self._serialize_instance(instance)))
+
+    def commit(self):
+        if self._pending_operations:
+            operations = _load_buffered_writes()
+            operations.extend(self._pending_operations)
+            _save_buffered_writes(operations)
+            self._pending_operations.clear()
+        self._session.rollback()
+        self._session.expunge_all()
+
+    def rollback(self):
+        self._session.rollback()
+        self._pending_operations.clear()
+
+    def close(self):
+        self._session.close()
+
+    def refresh(self, instance):
+        return self._session.refresh(instance)
+
+    def query(self, *entities, **kwargs):
+        return self._session.query(*entities, **kwargs)
+
+    def execute(self, *args, **kwargs):
+        return self._session.execute(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._session, name)
+
+    @staticmethod
+    def _serialize_instance(instance):
+        mapper = inspect(instance)
+        values = {}
+        pk_values = {}
+        for attr in mapper.attrs:
+            if attr.key == "_sa_instance_state":
+                continue
+            try:
+                value = getattr(instance, attr.key)
+            except Exception:
+                continue
+            if value is None:
+                values[attr.key] = None
+                continue
+            values[attr.key] = _serialize_value(value)
+            if attr.key in {pk.name for pk in mapper.primary_key}:
+                pk_values[attr.key] = _serialize_value(value)
+        return {
+            "class": instance.__class__.__name__,
+            "values": values,
+            "pk_values": pk_values,
+        }
+
+
+def SessionLocal():
+    return BufferedSession(_RAW_SESSION_FACTORY())
+
+
+def flush_pending_changes_to_db():
+    operations = _load_buffered_writes()
+    if not operations:
+        return 0
+
+    session = _RAW_SESSION_FACTORY()
+    try:
+        for operation_type, payload in operations:
+            model_name = payload.get("class")
+            if not model_name:
+                continue
+            model_class = _get_model_class(model_name)
+            if not model_class:
+                continue
+
+            table_name = getattr(model_class, "__tablename__", None)
+            if table_name and table_name not in inspect(engine).get_table_names():
+                continue
+
+            if operation_type == "delete":
+                pk_values = payload.get("pk_values", {}) or {}
+                if not pk_values:
+                    continue
+                query = session.query(model_class)
+                for key, value in pk_values.items():
+                    query = query.filter(getattr(model_class, key) == _restore_value(value))
+                query.delete(synchronize_session=False)
+                continue
+
+            if operation_type == "add":
+                values = payload.get("values", {}) or {}
+                instance = model_class()
+                for key, value in values.items():
+                    if key in {column.name for column in inspect(model_class).mapper.columns}:
+                        setattr(instance, key, _restore_value(value))
+                session.merge(instance)
+
+        session.commit()
+        _save_buffered_writes([])
+        return len(operations)
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 class GuildConfig(Base):
     __tablename__ = "guild_config"
@@ -108,6 +283,7 @@ class CustomLeaderboard(Base):
     channel_id = Column(String, primary_key=True)
     name = Column(String, nullable=False)
     guild_id = Column(String, nullable=False)
+    required_role_id = Column(String, nullable=True)
 
 class HallOfFameEntry(Base):
     __tablename__ = "hall_of_fame_entries"
@@ -180,6 +356,14 @@ def ensure_database_columns():
     if "hall_of_fame_warning_channel" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN hall_of_fame_warning_channel VARCHAR"))
+    custom_leaderboard_columns = {column["name"] for column in inspector.get_columns("custom_leaderboards")}
+    if "required_role_id" not in custom_leaderboard_columns:
+        with engine.begin() as conn:
+            try:
+                conn.execute(text("ALTER TABLE custom_leaderboards ADD COLUMN required_role_id VARCHAR"))
+            except ProgrammingError as exc:
+                if "duplicate column" not in str(exc).lower() and "already exists" not in str(exc).lower():
+                    raise
     if "level_up_announcements_enabled" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN level_up_announcements_enabled BOOLEAN DEFAULT FALSE"))

@@ -134,7 +134,7 @@ class NotificationsCog(commands.Cog):
                         for member in channel.members:
                             if member.bot: continue
                             
-                            if not should_include_member_for_custom_leaderboard(member):
+                            if not should_include_member_for_custom_leaderboard(member, required_role_ids=[lb.required_role_id] if lb.required_role_id else []):
                                 continue
                             
                             user = user_map.get(member.id)

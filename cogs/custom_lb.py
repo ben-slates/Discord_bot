@@ -487,7 +487,12 @@ class CustomLBCog(commands.Cog):
 
     @app_commands.command(name="add_custom_leaderboard", description="Admin:Add a custom daily leaderboard to a channel")
     @app_commands.default_permissions(administrator=True)
-    async def add_custom_leaderboard(self, interaction: discord.Interaction, channel: discord.TextChannel, name: str):
+    @app_commands.describe(
+        channel="The channel where the leaderboard should appear",
+        name="The display name for the custom leaderboard",
+        role="Optional role that members must have to qualify for this leaderboard",
+    )
+    async def add_custom_leaderboard(self, interaction: discord.Interaction, channel: discord.TextChannel, name: str, role: discord.Role = None):
         db = SessionLocal()
         try:
             config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
@@ -502,11 +507,18 @@ class CustomLBCog(commands.Cog):
                 db.add(lb)
             else:
                 lb.name = name
+            lb.required_role_id = str(role.id) if role else None
             db.commit()
-            await interaction.response.send_message(
-                f"Custom leaderboard '{name}' added to {channel.mention}.",
-                ephemeral=True,
-            )
+            if role:
+                await interaction.response.send_message(
+                    f"Custom leaderboard '{name}' added to {channel.mention} for members with the {role.name} role.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.response.send_message(
+                    f"Custom leaderboard '{name}' added to {channel.mention} for all members.",
+                    ephemeral=True,
+                )
         finally:
             db.close()
 
