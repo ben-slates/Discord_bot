@@ -1,9 +1,9 @@
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 from discord import app_commands
 import os
 from dotenv import load_dotenv
-from database import SessionLocal, GuildConfig, flush_pending_changes_to_db
+from database import SessionLocal, GuildConfig
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -14,23 +14,7 @@ class RynexBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
         self.tree.on_error = self.on_app_command_error
 
-    def cog_unload(self):
-        self.buffer_flush_loop.cancel()
-
-    @tasks.loop(hours=6)
-    async def buffer_flush_loop(self):
-        try:
-            flush_pending_changes_to_db()
-        except Exception as exc:
-            print(f"Buffered DB flush error: {exc}")
-
-    @buffer_flush_loop.before_loop
-    async def before_buffer_flush_loop(self):
-        await self.wait_until_ready()
-
     async def setup_hook(self):
-        self.buffer_flush_loop.start()
-
         for filename in os.listdir('./cogs'):
             if filename.endswith('.py') and not filename.startswith('__'):
                 try:

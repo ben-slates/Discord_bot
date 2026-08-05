@@ -8,3 +8,7 @@ python-multipart
 psutil
 itsdangerous
 google-generativeai
+discord
+dotenv
+psycopg2-binary
+pillow
