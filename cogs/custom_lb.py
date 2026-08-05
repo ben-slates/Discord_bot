@@ -1,11 +1,13 @@
 import os
 import asyncio
 import datetime
+import tempfile
 import discord
 from dotenv import load_dotenv
 from discord.ext import commands
 from discord import app_commands
-from database import SessionLocal, CustomLeaderboard, HallOfFameEntry, GuildConfig
+from database import SessionLocal, CustomLeaderboard, HallOfFameEntry, GuildConfig, UserData
+from utils.halloffame import render as render_halloffame
 from utils.leaderboard import get_leaderboard_channel_id
 
 load_dotenv()
@@ -550,7 +552,7 @@ class CustomLBCog(commands.Cog):
         finally:
             db.close()
 
-    @app_commands.command(name="hall_of_fame", description="Admin:Add users to the Hall of Fame role")
+    @app_commands.command(name="hall_of_fame", description="Admin:Add users to the Hall of Fame and generate an image")
     @app_commands.choices(
         template=[
             app_commands.Choice(name="Red Team", value="red_team"),
@@ -561,23 +563,23 @@ class CustomLBCog(commands.Cog):
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
         template="Choose the Hall of Fame template to use",
-        user1="First user to add (max 5 total)",
-        user2="Second user to add (max 5 total)",
-        user3="Third user to add (max 5 total)",
-        user4="Fourth user to add (max 5 total)",
-        user5="Fifth user to add (max 5 total)",
+        user1="First user to add",
+        user2="Second user to add",
+        user3="Third user to add",
+        user4="Fourth user to add",
+        user5="Fifth user to add",
         custom_name="Optional custom name to use for the custom template",
     )
     async def add_to_hall_of_fame(
         self,
         interaction: discord.Interaction,
         template: app_commands.Choice[str],
+        user1: discord.Member,
+        user2: discord.Member,
+        user3: discord.Member,
+        user4: discord.Member,
+        user5: discord.Member,
         custom_name: str = None,
-        user1: discord.Member = None,
-        user2: discord.Member = None,
-        user3: discord.Member = None,
-        user4: discord.Member = None,
-        user5: discord.Member = None,
     ):
         db = SessionLocal()
         try:
@@ -600,13 +602,9 @@ class CustomLBCog(commands.Cog):
             await interaction.followup.send("Invalid Hall of Fame template selected.", ephemeral=True)
             return
 
-        users = [u for u in (user1, user2, user3, user4, user5) if u is not None]
-        if not users:
-            await interaction.followup.send("Please provide at least one user.", ephemeral=True)
-            return
-
-        if len(users) > 5:
-            await interaction.followup.send(f"You can add up to 5 user(s) for the {template_config['label']} template.", ephemeral=True)
+        users = [user1, user2, user3, user4, user5]
+        if len({u.id for u in users}) != len(users):
+            await interaction.followup.send("Please provide five unique users for the Hall of Fame.", ephemeral=True)
             return
 
         guild = interaction.guild
@@ -681,14 +679,36 @@ class CustomLBCog(commands.Cog):
                 color=discord.Color.gold(),
                 timestamp=datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))),
             )
+
+            user_stats = []
+            avatars = []
+            ui_db = SessionLocal()
+            try:
+                for user in users:
+                    user_record = ui_db.query(UserData).filter_by(user_id=int(user.id)).first()
+                    if user_record:
+                        user_stats.append((user.display_name, user_record.xp, user_record.level))
+                    else:
+                        user_stats.append((user.display_name, 0, 1))
+                    avatar_bytes = await user.display_avatar.replace(size=256).read()
+                    avatars.append(avatar_bytes)
+            finally:
+                ui_db.close()
+
             if processed_users:
                 ranking_lines = [f"#{index} • {user.mention}" for index, user in enumerate(processed_users[:5], start=1)]
                 embed.add_field(name=template_config["field_name"], value="\n".join(ranking_lines), inline=False)
+                filename = f"halloffame_{guild.id}_{interaction.id}.png"
+                file_obj = await asyncio.to_thread(render_halloffame, user_stats, None, avatars, None)
+                attachment = discord.File(file_obj, filename=filename)
+                embed.set_image(url=f"attachment://{filename}")
+                await announcement_channel.send(content="@everyone", embed=embed, file=attachment)
             else:
                 embed.description = "The Hall of Fame update could not assign the role to any provided user."
+                embed.set_footer(text=template_config["footer"])
+                await announcement_channel.send(content="@everyone", embed=embed)
 
             embed.set_footer(text=template_config["footer"])
-            await announcement_channel.send(content="@everyone", embed=embed)
 
             try:
                 await interaction.followup.send(

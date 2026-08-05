@@ -1,4 +1,125 @@
 {
-  "last_flush": "2026-08-04T21:41:38.179082+05:00",
-  "entries": []
+  "last_flush": "2026-08-05T19:40:11.899456+05:00",
+  "entries": [
+    {
+      "link": "https://thehackernews.com/2026/08/open-vsx-removes-77-malicious-evil-twin.html",
+      "title": "Open VSX Removes 77 Malicious Evil Twin Extensions Exfiltrating Developer Data",
+      "summary": "A cluster of 77 extensions on the Open VSX marketplace has been found to impersonate legitimate developer tools while transmitting information about the systems and development environments on which they were installed.\n\nThe \"evil twin\" extensions were uploaded to the repository between July 26 and August 1, 2026, according to Manifold Security. The packages have been removed from Open VSX as of",
+      "published": "Wed, 05 Aug 2026 14:53:03 +0530",
+      "source_name": "The Hacker News",
+      "posted_at": "2026-08-05T19:54:19.954218+05:00"
+    },
+    {
+      "link": "https://thehackernews.com/2026/08/leaked-n8n-api-tokens-exposed-live.html",
+      "title": "Leaked n8n API Tokens Exposed Live Instances to Credential Theft",
+      "summary": "GitGuardian researchers found 321 n8n instances accepting API tokens exposed in public GitHub commits and demonstrated four ways attackers could use them to access sensitive data and downstream credentials without exploiting a software vulnerability.\n\nWe scanned public GitHub commits for exposed n8n API tokens and identified 4,576 unique credentials associated with 1,255 hostnames. Of the 896",
+      "published": "Wed, 05 Aug 2026 16:05:29 +0530",
+      "source_name": "The Hacker News",
+      "posted_at": "2026-08-05T19:54:19.954218+05:00"
+    },
+    {
+      "link": "https://thehackernews.com/2026/08/critical-gitea-flaw-let-unauthenticated.html",
+      "title": "Critical Gitea Flaw Let Unauthenticated Attackers Read Server Files via Org-Mode Markup",
+      "summary": "An unauthenticated attacker can read any file the service account can access on Gitea, the self-hosted Git platform, in versions 1.22.1 through 1.27.0. No login, no repository write access. A public repository and crafted Org-mode markup are enough. The flaw is fixed in Gitea 1.27.1.\n\nThe file-read flaw is tracked as CVE-2026-59774, rated Critical with a CVSS score of 9.8, and received its",
+      "published": "Wed, 05 Aug 2026 16:34:23 +0530",
+      "source_name": "The Hacker News",
+      "posted_at": "2026-08-05T19:54:19.954218+05:00"
+    },
+    {
+      "link": "https://thehackernews.com/2026/08/kali365-weaponizes-microsoft.html",
+      "title": "Kali365 Weaponizes Microsoft Authentication Against US Companies: New Enterprise Risk",
+      "summary": "Kali365 is turning a legitimate Microsoft login into a gateway to corporate data.\n\nThe phishing kit targets US organizations with attacker-controlled device codes that victims approve on Microsoft's real authentication page. Once access and refresh tokens are issued, attackers may retain access to email, documents, and cloud resources, creating a direct path to data exposure, financial fraud,",
+      "published": "Wed, 05 Aug 2026 17:13:19 +0530",
+      "source_name": "The Hacker News",
+      "posted_at": "2026-08-05T19:54:19.954218+05:00"
+    },
+    {
+      "link": "https://thehackernews.com/2026/08/new-ovswrap-linux-kernel-flaw-lets.html",
+      "title": "New OVSwrap Linux Kernel Flaw Lets Local Users Gain Root via Open vSwitch",
+      "summary": "A memory corruption flaw in the Linux kernel's Open vSwitch datapath gives ordinary local users a path to root on a broad set of default-configured distributions, and a public exploit ships with pre-built records for roughly 800 kernel builds.\n\nThe vulnerability, tracked as CVE-2026-64531 (CVSS score: 7.8) and codenamed OVSwrap by its discoverer, was disclosed by security researcher Asim",
+      "published": "Wed, 05 Aug 2026 17:13:27 +0530",
+      "source_name": "The Hacker News",
+      "posted_at": "2026-08-05T19:54:19.954218+05:00"
+    },
+    {
+      "link": "https://www.bleepingcomputer.com/news/security/new-xcsset-variant-targets-macos-devs-via-compromised-xcode-projects/",
+      "title": "New XCSSET variant targets macOS devs via compromised Xcode projects",
+      "summary": "A new version of the XCSSET malware is targeting thousands of\u00a0macOS users through compromised Xcode projects and GitHub repositories. [...]",
+      "published": "Tue, 04 Aug 2026 15:03:09 -0400",
+      "source_name": "Bleeping Computer",
+      "posted_at": "2026-08-05T19:54:19.954218+05:00"
+    },
+    {
+      "link": "https://www.bleepingcomputer.com/news/security/phishing-service-spoofs-ringcentral-to-steal-microsoft-365-accounts/",
+      "title": "Phishing service spoofs RingCentral to steal Microsoft 365 accounts",
+      "summary": "The Greatness phishing-as-a-service (PhaaS) platform has expanded from credential phishing to adversary-in-the-middle attacks and device-code phishing targeting Microsoft 365 accounts. [...]",
+      "published": "Tue, 04 Aug 2026 17:45:36 -0400",
+      "source_name": "Bleeping Computer",
+      "posted_at": "2026-08-05T19:54:19.954218+05:00"
+    },
+    {
+      "link": "https://www.bleepingcomputer.com/news/security/tp-link-patches-omada-ztp-flaws-allowing-hackers-to-breach-networks/",
+      "title": "TP-Link patches Omada ZTP flaws allowing hackers to breach networks",
+      "summary": "TP-Link has patched 15 vulnerabilities in the zero-touch provisioning (ZTP) mechanism of its Omada network devices that could be chained with previously disclosed flaws to achieve remote code execution (RCE). [...]",
+      "published": "Tue, 04 Aug 2026 18:18:20 -0400",
+      "source_name": "Bleeping Computer",
+      "posted_at": "2026-08-05T19:54:19.954218+05:00"
+    },
+    {
+      "link": "https://www.bleepingcomputer.com/news/security/openai-anthropic-ai-agents-targeted-real-people-and-systems-in-cyber-tests/",
+      "title": "OpenAI, Anthropic AI agents targeted real people and systems in cyber tests",
+      "summary": "OpenAI and Anthropic have confirmed that their AI models were involved in separate, newly disclosed third-party cybersecurity testing incidents that resulted in a real website being breached and social engineering attacks against people outside the intended testing boundaries. [...]",
+      "published": "Tue, 04 Aug 2026 19:39:59 -0400",
+      "source_name": "Bleeping Computer",
+      "posted_at": "2026-08-05T19:54:19.954218+05:00"
+    },
+    {
+      "link": "https://www.bleepingcomputer.com/news/security/how-ai-powered-phishing-killed-blocklists-for-good/",
+      "title": "How AI-powered phishing killed blocklists for good",
+      "summary": "AI is helping attackers create disposable phishing infrastructure and rapidly evolving toolkits that blocklists cannot track fast enough. Push Security explains why browser-level, technique-based detection offers a more durable defense than relying on domains, signatures, and other known-bad indicators. [...]",
+      "published": "Wed, 05 Aug 2026 10:01:11 -0400",
+      "source_name": "Bleeping Computer",
+      "posted_at": "2026-08-05T19:54:19.954218+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-17506",
+      "title": "CVE-2026-17506 - Independent Analytics <= 2.15.0 - Unauthenticated Stored Cross-Site Scripting",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-17506\n  <br />\n  <strong>Published :</strong> Aug. 5, 2026, 1:26 p.m. | 35\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>The Independent Analytics plugin for WordPress is vulnerable to Stored Cross-Site Scripting via the 404 not_found_url tracking parameter in versions up to, and including, 2.15.0. This is due to the get_cell_content() function applying urldecode() after esc_url() when rendering the URL column for 404 entries \u2014 a sequence that allows percent-encoded HTML to pass URL validation and then be reconstructed as raw markup, which wp_kses_post() does not strip because it retains img elements and data-* attributes, and because the public REST endpoint /iawp/search accepts unauthenticated requests as long as they carry a signature that is itself embedded in public page HTML. This makes it possible for unauthenticated attackers to inject arbitrary web scripts in pages that will execute whenever a user accesses an injected page.\n  <br />\n  <strong>Severity:</strong> 0.0 | NA\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Wed, 05 Aug 2026 13:26:42 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-05T19:54:19.954218+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-7529",
+      "title": "CVE-2026-7529 - wiseCampaign <= 1.1.16 - Missing Authorization to Unauthenticated Plugin Configuration Modification via REST API",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-7529\n  <br />\n  <strong>Published :</strong> Aug. 5, 2026, 1:26 p.m. | 35\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>The wiseCampaign \u2013 WooCommerce Conversions Made Easy plugin for WordPress is vulnerable to unauthorized modification and disclosure of data due to every one of its REST API endpoints being registered with `permission_callback => '__return_true'` in all versions up to, and including, 1.1.16. This makes it possible for unauthenticated attackers to read and modify the plugin's banner, stockbar, and core settings \u2014 including saving/updating banner records, toggling stockbar/feature flags, changing the active banner, and uploading background-image files via wp_handle_upload() \u2014 without any nonce or capability check.\n  <br />\n  <strong>Severity:</strong> 0.0 | NA\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Wed, 05 Aug 2026 13:26:42 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-05T19:54:19.954218+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-15979",
+      "title": "CVE-2026-15979 - Content Egg <= 11.3.0 - Authenticated (Author+) Arbitrary File Deletion",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-15979\n  <br />\n  <strong>Published :</strong> Aug. 5, 2026, 1:26 p.m. | 35\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>The Content Egg \u2013 Affiliate Product Importer & Price Comparison plugin for WordPress is vulnerable to Arbitrary File Deletion via Path Traversal in versions up to and including 11.3.0. This is due to insufficient validation of the 'img_file' field within the cegg_data post metadata: the value passes only through wp_strip_all_tags() (which does not strip path traversal sequences), is stored directly in post meta, and is later concatenated without normalization into a filesystem path in getFullImgPath() before being passed to PHP's unlink(). This makes it possible for authenticated attackers, with author-level access and above, to delete arbitrary files on the affected site's server which may make remote code execution possible.\n  <br />\n  <strong>Severity:</strong> 0.0 | NA\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Wed, 05 Aug 2026 13:26:43 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-05T19:54:19.954218+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-67623",
+      "title": "CVE-2026-67623 - Mistral Vibe < 2.23.3 Arbitrary Command Execution via git fsmonitor Hook",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-67623\n  <br />\n  <strong>Published :</strong> Aug. 5, 2026, 1:27 p.m. | 34\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>Mistral Vibe before 2.23.3 contains a remote code execution vulnerability that allows attackers to execute arbitrary commands by embedding a malicious core.fsmonitor hook in a repository's .git/config file, which is triggered when vibe invokes git status --porcelain without suppressing hook execution. Attackers can distribute or create a crafted repository containing a malicious fsmonitor entry to achieve arbitrary command execution with the victim's full privileges when any vibe command is run inside that repository.\n  <br />\n  <strong>Severity:</strong> 8.8 | HIGH\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Wed, 05 Aug 2026 13:27:27 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-05T19:54:19.954218+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-16443",
+      "title": "CVE-2026-16443 - Keycloak-services: keycloak-services: saml broker metadata import disables response signature validation",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-16443\n  <br />\n  <strong>Published :</strong> Aug. 5, 2026, 1:44 p.m. | 17\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>A flaw was found in the SAML metadata import functionality of the keycloak-services component, which is the core engine for identity brokering in Red Hat Build of Keycloak. When importing identity provider metadata that lacks specific usage attributes for keys, the system incorrectly disables signature validation for SAML responses even if a signing certificate is provided. This issue allows an unauthenticated attacker to forge a SAML response and gain unauthorized access to a user account by knowing their external identifier.\n  <br />\n  <strong>Severity:</strong> 7.4 | HIGH\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Wed, 05 Aug 2026 13:44:09 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-05T19:54:19.954218+05:00"
+    }
+  ]
 }
