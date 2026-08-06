@@ -1,0 +1,15 @@
+@discord.ui.button(label="Talk to Human / Unsatisfied", style=discord.ButtonStyle.danger, custom_id="ticket_human")
+async def human(self, interaction: discord.Interaction, button: discord.ui.Button):
+    cog = interaction.client.get_cog("SupportCog")
+    if cog:
+        cog.human_requested.add(interaction.channel.id)
+
+    staff_role = next(
+        (r for r in interaction.guild.roles if r.name.lower() == "technical staff"),
+        None,
+    )
+    mention = staff_role.mention if staff_role else "@here"
+
+    await interaction.response.send_message(
+        f"{mention} {interaction.user.mention} is unsatisfied with the AI answer and requested human assistance!"
+    )

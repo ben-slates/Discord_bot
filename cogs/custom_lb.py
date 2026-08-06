@@ -166,6 +166,7 @@ class CustomLBCog(commands.Cog):
         option: app_commands.Choice[str],
         channel: discord.abc.GuildChannel,
     ):
+        await interaction.response.defer(ephemeral=True)
         db = SessionLocal()
         try:
             config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
@@ -175,79 +176,79 @@ class CustomLBCog(commands.Cog):
 
             if option.value == "bot_logs":
                 if not isinstance(channel, discord.TextChannel):
-                    await interaction.response.send_message("Bot logs must use a text channel.", ephemeral=True)
+                    await interaction.followup.send("Bot logs must use a text channel.", ephemeral=True)
                     return
                 config.bot_logs_enabled = True
                 config.bot_logs_channel = str(channel.id)
                 db.commit()
-                await interaction.response.send_message(f"Bot logs enabled for {channel.mention}.", ephemeral=True)
+                await interaction.followup.send(f"Bot logs enabled for {channel.mention}.", ephemeral=True)
                 return
 
             if option.value == "cve_and_news":
                 if not isinstance(channel, discord.TextChannel):
-                    await interaction.response.send_message("CVE and News must use a text channel.", ephemeral=True)
+                    await interaction.followup.send("CVE and News must use a text channel.", ephemeral=True)
                     return
                 config.cve_and_news_enabled = True
                 config.cve_and_news_channel = str(channel.id)
                 db.commit()
-                await interaction.response.send_message(f"CVE and News enabled for {channel.mention}.", ephemeral=True)
+                await interaction.followup.send(f"CVE and News enabled for {channel.mention}.", ephemeral=True)
                 return
 
             if option.value == "support":
                 if not isinstance(channel, discord.CategoryChannel):
-                    await interaction.response.send_message("Support must be enabled with a category.", ephemeral=True)
+                    await interaction.followup.send("Support must be enabled with a category.", ephemeral=True)
                     return
                 config.support_enabled = True
                 config.support_category = str(channel.id)
                 db.commit()
-                await interaction.response.send_message(f"Support enabled for category {channel.mention}.", ephemeral=True)
+                await interaction.followup.send(f"Support enabled for category {channel.mention}.", ephemeral=True)
                 return
 
             if option.value == "attendance":
                 if not isinstance(channel, discord.TextChannel):
-                    await interaction.response.send_message("Attendance must use a text channel.", ephemeral=True)
+                    await interaction.followup.send("Attendance must use a text channel.", ephemeral=True)
                     return
                 config.attendance_enabled = True
                 config.attendance_channel = str(channel.id)
                 db.commit()
-                await interaction.response.send_message(f"Attendance enabled for {channel.mention}.", ephemeral=True)
+                await interaction.followup.send(f"Attendance enabled for {channel.mention}.", ephemeral=True)
                 return
 
             if option.value == "welcome":
                 if not isinstance(channel, discord.TextChannel):
-                    await interaction.response.send_message("Welcome messages must use a text channel.", ephemeral=True)
+                    await interaction.followup.send("Welcome messages must use a text channel.", ephemeral=True)
                     return
                 config.welcome_enabled = True
                 config.welcome_channel = str(channel.id)
                 db.commit()
-                await interaction.response.send_message(f"Welcome messages enabled for {channel.mention}.", ephemeral=True)
+                await interaction.followup.send(f"Welcome messages enabled for {channel.mention}.", ephemeral=True)
                 return
 
             if option.value == "hall_of_fame":
-                await interaction.response.send_message("Use /enable_hall_of_fame for Hall of Fame setup.", ephemeral=True)
+                await interaction.followup.send("Use /enable_hall_of_fame for Hall of Fame setup.", ephemeral=True)
                 return
 
             if option.value == "leaderboard":
                 if not isinstance(channel, discord.TextChannel):
-                    await interaction.response.send_message("Leaderboard must use a text channel.", ephemeral=True)
+                    await interaction.followup.send("Leaderboard must use a text channel.", ephemeral=True)
                     return
                 config.leaderboard_enabled = True
                 config.leaderboard_channel = str(channel.id)
                 db.commit()
-                await interaction.response.send_message(f"Leaderboard enabled for {channel.mention}.", ephemeral=True)
+                await interaction.followup.send(f"Leaderboard enabled for {channel.mention}.", ephemeral=True)
                 return
 
             if option.value == "level_up_announcements":
                 if not isinstance(channel, discord.TextChannel):
-                    await interaction.response.send_message("Level-up announcements must use a text channel.", ephemeral=True)
+                    await interaction.followup.send("Level-up announcements must use a text channel.", ephemeral=True)
                     return
                 config.level_up_announcements_enabled = True
                 config.level_up_announcements_channel = str(channel.id)
                 db.commit()
-                await interaction.response.send_message(f"Level-up announcements enabled for {channel.mention}.", ephemeral=True)
+                await interaction.followup.send(f"Level-up announcements enabled for {channel.mention}.", ephemeral=True)
                 return
 
-            await interaction.response.send_message("That option is not supported yet.", ephemeral=True)
+            await interaction.followup.send("That option is not supported yet.", ephemeral=True)
         finally:
             db.close()
 
@@ -308,6 +309,7 @@ class CustomLBCog(commands.Cog):
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(option="The feature to disable")
     async def disable_feature(self, interaction: discord.Interaction, option: app_commands.Choice[str]):
+        await interaction.response.defer(ephemeral=True)
         db = SessionLocal()
         try:
             config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
@@ -319,35 +321,35 @@ class CustomLBCog(commands.Cog):
                 config.bot_logs_enabled = False
                 config.bot_logs_channel = None
                 db.commit()
-                await interaction.response.send_message("Bot logs disabled.", ephemeral=True)
+                await interaction.followup.send("Bot logs disabled.", ephemeral=True)
                 return
 
             if option.value == "cve_and_news":
                 config.cve_and_news_enabled = False
                 config.cve_and_news_channel = None
                 db.commit()
-                await interaction.response.send_message("CVE and News disabled.", ephemeral=True)
+                await interaction.followup.send("CVE and News disabled.", ephemeral=True)
                 return
 
             if option.value == "support":
                 config.support_enabled = False
                 config.support_category = None
                 db.commit()
-                await interaction.response.send_message("Support disabled.", ephemeral=True)
+                await interaction.followup.send("Support disabled.", ephemeral=True)
                 return
 
             if option.value == "attendance":
                 config.attendance_enabled = False
                 config.attendance_channel = None
                 db.commit()
-                await interaction.response.send_message("Attendance disabled.", ephemeral=True)
+                await interaction.followup.send("Attendance disabled.", ephemeral=True)
                 return
 
             if option.value == "welcome":
                 config.welcome_enabled = False
                 config.welcome_channel = None
                 db.commit()
-                await interaction.response.send_message("Welcome messages disabled.", ephemeral=True)
+                await interaction.followup.send("Welcome messages disabled.", ephemeral=True)
                 return
 
             if option.value == "hall_of_fame":
@@ -357,24 +359,24 @@ class CustomLBCog(commands.Cog):
                 config.hall_of_fame_announcement_channel = None
                 config.hall_of_fame_warning_channel = None
                 db.commit()
-                await interaction.response.send_message("Hall of Fame disabled.", ephemeral=True)
+                await interaction.followup.send("Hall of Fame disabled.", ephemeral=True)
                 return
 
             if option.value == "leaderboard":
                 config.leaderboard_enabled = False
                 config.leaderboard_channel = None
                 db.commit()
-                await interaction.response.send_message("Leaderboard disabled.", ephemeral=True)
+                await interaction.followup.send("Leaderboard disabled.", ephemeral=True)
                 return
 
             if option.value == "level_up_announcements":
                 config.level_up_announcements_enabled = False
                 config.level_up_announcements_channel = None
                 db.commit()
-                await interaction.response.send_message("Level-up announcements disabled.", ephemeral=True)
+                await interaction.followup.send("Level-up announcements disabled.", ephemeral=True)
                 return
 
-            await interaction.response.send_message("That option is not supported yet.", ephemeral=True)
+            await interaction.followup.send("That option is not supported yet.", ephemeral=True)
         finally:
             db.close()
 
