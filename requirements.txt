@@ -12,3 +12,5 @@ discord
 dotenv
 psycopg2-binary
 pillow
+feedparser
+beautifulsoup4
