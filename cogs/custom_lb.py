@@ -841,7 +841,7 @@ class CustomLBCog(commands.Cog):
             admin_mention = self._get_admin_role_mention(guild)
             try:
                 await warning_channel.send(
-                    f"⚠️ The Hall of Fame period has ended. {admin_mention}"
+                    f"The Hall of Fame period has ended. {admin_mention}"
                 )
             except discord.Forbidden:
                 pass
