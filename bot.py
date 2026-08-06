@@ -1,12 +1,33 @@
+import json
+import os
+from pathlib import Path
+
 import discord
 from discord.ext import commands
 from discord import app_commands
-import os
 from dotenv import load_dotenv
 from database import SessionLocal, GuildConfig
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+WORDS_FILE = Path(__file__).resolve().parent / "assets" / "words.json"
+
+
+def load_forbidden_words() -> set[str]:
+    if not WORDS_FILE.exists():
+        return set()
+    try:
+        with WORDS_FILE.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        if isinstance(data, list):
+            return {str(item).strip().lower() for item in data if str(item).strip()}
+    except Exception as exc:
+        print(f"Failed to load forbidden words: {exc}")
+    return set()
+
+
+FORBIDDEN_WORDS = load_forbidden_words()
+
 
 class RynexBot(commands.Bot):
     def __init__(self):
@@ -70,6 +91,26 @@ class RynexBot(commands.Bot):
                 await channel.send(embed=embed)
             except:
                 pass
+
+    async def on_message(self, message: discord.Message):
+        if message.author.bot or not message.guild:
+            return
+
+        await self.process_commands(message)
+
+        content = message.content.lower()
+        if not content:
+            return
+
+        for word in FORBIDDEN_WORDS:
+            if word in content:
+                try:
+                    await message.delete()
+                except discord.Forbidden:
+                    pass
+                except discord.HTTPException:
+                    pass
+                return
 
     async def _get_configured_log_channel(self, guild_id):
         db = SessionLocal()
