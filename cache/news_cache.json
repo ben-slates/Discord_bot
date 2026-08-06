@@ -1,4 +1,125 @@
 {
   "last_flush": "2026-08-06T12:11:10.263071+05:00",
-  "entries": []
+  "entries": [
+    {
+      "link": "https://thehackernews.com/2026/08/paperclip-ai-flaws-let-attackers-run.html",
+      "title": "Paperclip AI Flaws Let Attackers Run Host Commands via Malicious Agent Imports",
+      "summary": "Two security flaws in Paperclip could let attackers execute commands on a network server or a developer's computer. Paperclip is an open-source control plane for teams of artificial intelligence (AI) agents, and both paths rely on importing a malicious agent and starting it.\n\nA third flaw could expose sensitive data and control-plane details through application programming interface (API) routes",
+      "published": "Wed, 05 Aug 2026 20:44:05 +0530",
+      "source_name": "The Hacker News",
+      "posted_at": "2026-08-06T12:14:50.127573+05:00"
+    },
+    {
+      "link": "https://thehackernews.com/2026/08/poison-claude-sells-discounted-claude.html",
+      "title": "Poison Claude Sells Discounted Claude Access While Its Operator Sees Every Customer Prompt",
+      "summary": "Cybersecurity researchers have discovered more than half-a-dozen services advertisements for illegal access to artificial intelligence (AI) models on underground cybercrime forums and messaging platforms.\n\nOne such service, Poison Claude, claims to offer access to Anthropic's large language models (LLMs), including Opus 4.8, Opus 4.7, Opus 4.6, and Sonnet 4.6.\n\n\"Advertisements for Poison Claude",
+      "published": "Wed, 05 Aug 2026 21:06:03 +0530",
+      "source_name": "The Hacker News",
+      "posted_at": "2026-08-06T12:14:50.127573+05:00"
+    },
+    {
+      "link": "https://thehackernews.com/2026/08/openai-disrupts-poipet-scam-network.html",
+      "title": "OpenAI Disrupts Poipet Scam Network Using ChatGPT Across Multiple Fraud Schemes",
+      "summary": "OpenAI said it disrupted a Cambodia-based scam operation that used its generative artificial intelligence (AI) chatbot ChatGPT to facilitate a wide range of investment, romance, gambling, and law enforcement impersonation schemes.\n\nTo that end, it banned a coordinated network of ChatGPT accounts likely originating from Southeast Asia and operating from the city of Poipet, a region with extensive",
+      "published": "Thu, 06 Aug 2026 00:03:47 +0530",
+      "source_name": "The Hacker News",
+      "posted_at": "2026-08-06T12:14:50.127573+05:00"
+    },
+    {
+      "link": "https://thehackernews.com/2026/08/over-250-clickfix-domains-use-browser.html",
+      "title": "Over 250 ClickFix Domains Use Browser Fingerprinting to Hide macOS Malware Lures",
+      "summary": "A macOS ClickFix operation spanning more than 250 front-end domains now fingerprints visitors before deciding whether to show them a malware lure, a change Microsoft Threat Intelligence tracked on infrastructure it had been watching for weeks.\n\nThe server-side gate hides the malicious page from crawlers and sandboxes while presenting selected Mac users with a fake software download. Microsoft",
+      "published": "Thu, 06 Aug 2026 00:14:31 +0530",
+      "source_name": "The Hacker News",
+      "posted_at": "2026-08-06T12:14:50.127573+05:00"
+    },
+    {
+      "link": "https://thehackernews.com/2026/08/snowflake-hacker-pleads-guilty-over.html",
+      "title": "Snowflake Hacker Pleads Guilty Over Breaches Affecting at Least 100 Million People",
+      "summary": "Connor Riley Moucka pleaded guilty in Seattle federal court on Wednesday to computer fraud, wire fraud, aggravated identity theft and a related conspiracy over the 2024 breaches of Snowflake customer accounts.\n\nThe intrusions reached at least 165 organizations and exposed records belonging to at least 100 million people. Moucka, 26, of Kitchener, Ontario, personally took at least $495,000 from",
+      "published": "Thu, 06 Aug 2026 11:34:30 +0530",
+      "source_name": "The Hacker News",
+      "posted_at": "2026-08-06T12:14:50.127573+05:00"
+    },
+    {
+      "link": "https://www.bleepingcomputer.com/news/security/cisa-warns-of-hackers-exploiting-langflow-n-central-apache-tomcat-flaws/",
+      "title": "CISA warns of hackers exploiting Langflow, N-central, Apache Tomcat flaws",
+      "summary": "The U.S. Cybersecurity and Infrastructure Security Agency is giving federal agencies three days to mitigate vulnerabilities in IBM Langflow, N-central, and Apache Tomcat, all actively exploited. [...]",
+      "published": "Wed, 05 Aug 2026 11:51:33 -0400",
+      "source_name": "Bleeping Computer",
+      "posted_at": "2026-08-06T12:14:50.127573+05:00"
+    },
+    {
+      "link": "https://www.bleepingcomputer.com/news/security/coldcard-security-audit-phishing-attack-installs-remote-access-tool/",
+      "title": "COLDCARD security audit phishing attack installs remote access tool",
+      "summary": "A phishing campaign is exploiting fears surrounding the recently disclosed COLDCARD wallet vulnerability and suspected $88.6 million Bitcoin theft to trick users into installing ScreenConnect remote access software. [...]",
+      "published": "Wed, 05 Aug 2026 13:49:41 -0400",
+      "source_name": "Bleeping Computer",
+      "posted_at": "2026-08-06T12:14:50.127573+05:00"
+    },
+    {
+      "link": "https://www.bleepingcomputer.com/news/security/hackers-run-khunt-post-exploitation-toolkit-from-oracle-database/",
+      "title": "Hackers run khunt post-exploitation toolkit from Oracle database",
+      "summary": "Hackers exploited a SQL injection vulnerability to install a post-exploitation toolkit directly inside an Oracle database that was used to breach a corporate network. [...]",
+      "published": "Wed, 05 Aug 2026 15:55:25 -0400",
+      "source_name": "Bleeping Computer",
+      "posted_at": "2026-08-06T12:14:50.127573+05:00"
+    },
+    {
+      "link": "https://www.bleepingcomputer.com/news/security/canadian-pleads-guilty-to-snowflake-cloud-data-theft-attacks/",
+      "title": "Canadian pleads guilty to Snowflake cloud data-theft attacks",
+      "summary": "A Canadian man pleaded guilty today to his role in accessing company accounts at cloud storage provider Snowflake and stealing data from at least 165 organizations in a scheme to extort millions of dollars from victims. [...]",
+      "published": "Wed, 05 Aug 2026 17:53:26 -0400",
+      "source_name": "Bleeping Computer",
+      "posted_at": "2026-08-06T12:14:50.127573+05:00"
+    },
+    {
+      "link": "https://www.bleepingcomputer.com/news/security/ransom-cartel-ransomware-creator-sentenced-to-16-years-in-prison/",
+      "title": "Ransom Cartel ransomware creator sentenced to 16 years in prison",
+      "summary": "Maksim Silnikau, the creator and administrator of the Ransom Cartel ransomware operation, was sentenced to 16 years in prison for his role in ransomware attacks against at least 18 companies worldwide. [...]",
+      "published": "Wed, 05 Aug 2026 19:00:50 -0400",
+      "source_name": "Bleeping Computer",
+      "posted_at": "2026-08-06T12:14:50.127573+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-18909",
+      "title": "CVE-2026-18909 - ELAN Microelectronics Smart-Pad Stack-Based Buffer Overflow",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-18909\n  <br />\n  <strong>Published :</strong> Aug. 6, 2026, 5:16 a.m. | 50\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>A stack-based buffer overflow vulnerability exists in ELAN Microelectronics Corp. ELAN Smart-Pad on Windows (ETD.sys and ETDSMBus.sys). During Intel SMBus recovery, ETDSMBus.sys does not enforce an upper-bound check on the hardware-derived report count, allowing an out-of-range value to be forwarded to ETD.sys where it is used as a loop counter for a stack buffer copy without destination size validation. A local attacker with standard user privileges can trigger a kernel bugcheck (BSOD 0xF7 DRIVER_OVERRAN_STACK_BUFFER), resulting in denial of service. This issue affects ELAN Smart-Pad through ETD24.21.52.3.\n  <br />\n  <strong>Severity:</strong> 4.7 | MEDIUM\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Thu, 06 Aug 2026 05:16:40 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-06T12:14:50.127573+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-18992",
+      "title": "CVE-2026-18992 - zhayujie CowAgent Self-Evolution Review Agent executor.py _select_tools authorization",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-18992\n  <br />\n  <strong>Published :</strong> Aug. 6, 2026, 5:16 a.m. | 50\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>A vulnerability was detected in zhayujie CowAgent up to 2.1.1. This vulnerability affects the function _select_tools of the file agent/evolution/executor.py of the component Self-Evolution Review Agent. Performing a manipulation results in incorrect authorization. The attack is possible to be carried out remotely. The exploit is now public and may be used.\n  <br />\n  <strong>Severity:</strong> 6.5 | MEDIUM\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Thu, 06 Aug 2026 05:16:41 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-06T12:14:50.127573+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-18993",
+      "title": "CVE-2026-18993 - NousResearch hermes-agent Memory Toolset model_tools.py access control",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-18993\n  <br />\n  <strong>Published :</strong> Aug. 6, 2026, 5:16 a.m. | 50\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>A vulnerability was detected in NousResearch hermes-agent up to 0.16.0. Affected by this issue is some unknown functionality of the file hermes-agent/model_tools.py of the component Memory Toolset. The manipulation results in improper access controls. The attack can be executed remotely. The exploit is now public and may be used.\n  <br />\n  <strong>Severity:</strong> 6.5 | MEDIUM\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Thu, 06 Aug 2026 05:16:41 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-06T12:14:50.127573+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-18995",
+      "title": "CVE-2026-18995 - netease-youdao LobsterAI MEDIA Path artifactParser.ts parseMediaTokensFromText information disclosure",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-18995\n  <br />\n  <strong>Published :</strong> Aug. 6, 2026, 5:16 a.m. | 50\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>A flaw has been found in netease-youdao LobsterAI 2026.6.10. This affects the function parseMediaTokensFromText of the file src/renderer/services/artifactParser.ts of the component MEDIA Path Handler. This manipulation causes information disclosure. The attack is possible to be carried out remotely. The exploit has been published and may be used. The project was informed of the problem early through an issue report but has not responded yet.\n  <br />\n  <strong>Severity:</strong> 5.0 | MEDIUM\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Thu, 06 Aug 2026 05:16:41 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-06T12:14:50.127573+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-18996",
+      "title": "CVE-2026-18996 - cosmicstack-labs mercury-agent run_command permissions.ts PermissionManager.checkShellCommand privileges assignment",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-18996\n  <br />\n  <strong>Published :</strong> Aug. 6, 2026, 5:16 a.m. | 50\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>A vulnerability has been found in cosmicstack-labs mercury-agent up to 1.1.12. This vulnerability affects the function PermissionManager.checkShellCommand of the file src/capabilities/permissions.ts of the component run_command Handler. Such manipulation leads to incorrect privilege assignment. The attack may be performed from remote. The exploit has been disclosed to the public and may be used. The project was informed of the problem early through an issue report but has not responded yet.\n  <br />\n  <strong>Severity:</strong> 6.5 | MEDIUM\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Thu, 06 Aug 2026 05:16:42 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-06T12:14:50.127573+05:00"
+    }
+  ]
 }

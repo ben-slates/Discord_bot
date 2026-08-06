@@ -110,6 +110,13 @@ class RynexBot(commands.Bot):
                     pass
                 except discord.HTTPException:
                     pass
+
+                try:
+                    await message.author.send(
+                        "Your message was not sent because it contains blocked or harmful language."
+                    )
+                except Exception:
+                    pass
                 return
 
     async def _get_configured_log_channel(self, guild_id):
