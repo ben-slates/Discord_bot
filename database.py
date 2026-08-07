@@ -52,10 +52,7 @@ class GuildConfig(Base):
     # Support
     support_enabled = Column(Boolean, default=False)
     support_category = Column(String, nullable=True)
-    # Security
-    antispam_enabled = Column(Boolean, default=False)
-    antispam_max_messages = Column(Integer, default=5)
-    antispam_seconds = Column(Integer, default=5)
+    # Security (antispam columns removed)
     # Notifications
     notification_channel = Column(String, nullable=True)
     daily_summary_time = Column(String, default="00:00")
@@ -72,9 +69,7 @@ class GuildConfig(Base):
     # CVE and news
     cve_and_news_enabled = Column(Boolean, default=False)
     cve_and_news_channel = Column(String, nullable=True)
-    # Support
-    support_feature_enabled = Column(Boolean, default=False)
-    support_category = Column(String, nullable=True)
+    # Note: legacy `support_feature_enabled` removed; `support_enabled` used instead
 
 class UserData(Base):
     __tablename__ = "users"
@@ -157,12 +152,7 @@ def ensure_database_columns():
     if "cve_and_news_channel" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN cve_and_news_channel VARCHAR"))
-    if "support_feature_enabled" not in columns:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE guild_config ADD COLUMN support_feature_enabled BOOLEAN DEFAULT FALSE"))
-    if "support_category" not in columns:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE guild_config ADD COLUMN support_category VARCHAR"))
+    # legacy support_feature_enabled removed; support_category is already handled above
     if "leaderboard_enabled" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN leaderboard_enabled BOOLEAN DEFAULT FALSE"))
