@@ -34,7 +34,7 @@ class GuildConfig(Base):
     leveling_enabled = Column(Boolean, default=False)
     xp_cooldown = Column(Integer, default=60)
     xp_per_message = Column(Integer, default=15)
-    daily_xp_limit = Column(Integer, default=100)
+    daily_xp_limit = Column(Integer, default=200)
     min_message_length = Column(Integer, default=5)
     leveling_channel = Column(String, nullable=True)
     # Attendance
@@ -86,6 +86,8 @@ class UserData(Base):
     daily_streak = Column(Integer, default=0, nullable=False)
     reputation = Column(Integer, default=0, nullable=False)
     daily_xp_earned = Column(Integer, default=0, nullable=False)
+    daily_text_xp_earned = Column(Integer, default=0, nullable=False)
+    daily_voice_xp_earned = Column(Integer, default=0, nullable=False)
     daily_xp_date = Column(String, nullable=True, default=None)
     last_daily = Column(DateTime(timezone=True))
     last_message = Column(String)
@@ -202,6 +204,17 @@ def ensure_database_columns():
     if "level_up_announcements_channel" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN level_up_announcements_channel VARCHAR"))
+    user_columns = {column["name"] for column in inspector.get_columns("users")}
+    if "daily_text_xp_earned" not in user_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE users ADD COLUMN daily_text_xp_earned INTEGER DEFAULT 0"))
+    if "daily_voice_xp_earned" not in user_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE users ADD COLUMN daily_voice_xp_earned INTEGER DEFAULT 0"))
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE users SET daily_text_xp_earned = 0 WHERE daily_text_xp_earned IS NULL"))
+        conn.execute(text("UPDATE users SET daily_voice_xp_earned = 0 WHERE daily_voice_xp_earned IS NULL"))
+        conn.execute(text("UPDATE guild_config SET daily_xp_limit = 200 WHERE daily_xp_limit IS NULL OR daily_xp_limit != 200"))
 
 
 ensure_database_columns()

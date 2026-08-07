@@ -15,6 +15,10 @@ from utils.leaderboard import (
 )
 
 DEFAULT_LEVELING_CHANNEL_ID = 1519264254178623488
+DAILY_TEXT_XP_CAP = 100
+DAILY_VOICE_XP_CAP = 100
+DAILY_XP_CAP = DAILY_TEXT_XP_CAP + DAILY_VOICE_XP_CAP
+VOICE_XP_PER_MINUTE = 3
 
 def calculate_required_xp(level: int) -> int:
     if level < 1:
@@ -57,7 +61,7 @@ class LevelingCog(commands.Cog):
             tied_before = db.query(UserData).filter(UserData.xp == user.xp, UserData.user_id < user.user_id).count()
             return (
                 user.level, user.xp, higher_xp + tied_before + 1, user.daily_xp_earned,
-                config.daily_xp_limit if config else 100,
+                DAILY_XP_CAP,
                 config.leveling_channel if config else None,
             )
         finally:
@@ -79,10 +83,18 @@ class LevelingCog(commands.Cog):
             if not user.daily_xp_date or str(user.daily_xp_date) != today:
                 user.daily_xp_date = today
                 user.daily_xp_earned = 0
+                user.daily_text_xp_earned = 0
+                user.daily_voice_xp_earned = 0
             
-            if user.daily_xp_earned < config.daily_xp_limit:
-                user.xp += config.xp_per_message
-                user.daily_xp_earned += config.xp_per_message
+            xp_to_award = min(
+                max(config.xp_per_message, 0),
+                max(DAILY_TEXT_XP_CAP - user.daily_text_xp_earned, 0),
+                max(DAILY_XP_CAP - user.daily_xp_earned, 0),
+            )
+            if xp_to_award:
+                user.xp += xp_to_award
+                user.daily_text_xp_earned += xp_to_award
+                user.daily_xp_earned += xp_to_award
                 user.messages += 1
                 user.last_message = message_content[:255]
                 
@@ -290,15 +302,23 @@ class LevelingCog(commands.Cog):
         level_ups = []
         try:
             today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))).strftime('%Y-%m-%d')
-            for guild_id, user_id, xp_per_min, daily_limit in voice_users:
+            for guild_id, user_id in voice_users:
                 user = self.get_user(db, user_id)
                 if not user.daily_xp_date or str(user.daily_xp_date) != today:
                     user.daily_xp_date = today
                     user.daily_xp_earned = 0
+                    user.daily_text_xp_earned = 0
+                    user.daily_voice_xp_earned = 0
                 
-                if user.daily_xp_earned < daily_limit:
-                    user.xp += xp_per_min
-                    user.daily_xp_earned += xp_per_min
+                xp_to_award = min(
+                    VOICE_XP_PER_MINUTE,
+                    max(DAILY_VOICE_XP_CAP - user.daily_voice_xp_earned, 0),
+                    max(DAILY_XP_CAP - user.daily_xp_earned, 0),
+                )
+                if xp_to_award:
+                    user.xp += xp_to_award
+                    user.daily_voice_xp_earned += xp_to_award
+                    user.daily_xp_earned += xp_to_award
                     user.voice_minutes += 1
                     
                     new_level = calculate_level(user.xp)
@@ -342,8 +362,6 @@ class LevelingCog(commands.Cog):
                 config = config_db.query(GuildConfig).filter_by(guild_id=str(guild.id)).first()
                 if not config or not config.leveling_enabled:
                     continue
-                daily_limit = config.daily_xp_limit
-                xp_per_min = 3  # Lower rate for voice channels
             except Exception as e:
                 print(f"Error fetching config: {e}")
                 continue
@@ -355,7 +373,7 @@ class LevelingCog(commands.Cog):
                 non_bots = [m for m in vc.members if not m.bot and not m.voice.self_deaf and not m.voice.deaf]
                 if len(non_bots) >= 2:
                     for member in non_bots:
-                        voice_users.append((guild.id, member.id, xp_per_min, daily_limit))
+                        voice_users.append((guild.id, member.id))
                         
         if voice_users:
             import asyncio
