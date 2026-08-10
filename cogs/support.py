@@ -256,6 +256,27 @@ class SupportCog(commands.Cog):
         finally:
             db.close()
 
+    @app_commands.command(name="question", description="Ask a question in a highlighted announcement box")
+    @app_commands.checks.cooldown(1, 10, key=lambda i: (i.guild_id, i.user.id))
+    async def question(self, interaction: discord.Interaction, text: str):
+        embed = discord.Embed(
+            title="❓ Question",
+            description=text,
+            color=discord.Color.dark_blue()
+        )
+        embed.set_footer(text="Submitted via /question")
+        embed.timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5)))
+
+        channel = interaction.channel
+        if channel:
+            try:
+                await channel.send(embed=embed)
+                await interaction.response.send_message("Your question has been posted.", ephemeral=True)
+            except discord.Forbidden:
+                await interaction.response.send_message("I cannot post the question in this channel.", ephemeral=True)
+        else:
+            await interaction.response.send_message("Unable to post the question here.", ephemeral=True)
+
     @app_commands.command(name="adduser", description="Admin: Add a user to this ticket")
     @app_commands.default_permissions(administrator=True)
     async def adduser(self, interaction: discord.Interaction, member: discord.Member):
