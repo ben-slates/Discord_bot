@@ -1,3 +1,4 @@
+import asyncio
 import discord
 from discord.ext import commands, tasks
 import feedparser
@@ -76,8 +77,11 @@ class NewsCog(commands.Cog):
             now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5)))
             should_flush_now = should_flush_cache(CACHE_NAME, FLUSH_INTERVAL_HOURS)
 
+            async def fetch_feed(url: str):
+                return await asyncio.to_thread(feedparser.parse, url)
+
             for feed_info in FEEDS:
-                feed = feedparser.parse(feed_info["url"])
+                feed = await fetch_feed(feed_info["url"])
                 for entry in list(reversed(feed.entries))[-5:]:
                     link = getattr(entry, "link", None)
                     if not link:

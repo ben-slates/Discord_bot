@@ -8,6 +8,7 @@ from database import SessionLocal, GuildConfig, UserData, CustomLeaderboard, Att
 import sys
 import os
 from utils.leaderboard import (
+    get_channel_members,
     get_leaderboard_channel_id,
     get_main_leaderboard_role_ids,
     should_include_member_for_custom_leaderboard,
@@ -202,10 +203,12 @@ class LevelingCog(commands.Cog):
                         uid = int(log.user_id)
                         att_map[uid] = att_map.get(uid, 0) + 1
                         
-                    for member in channel.members:
-                        if member.bot: continue
+                    members = await get_channel_members(channel)
+                    for member in members:
+                        if member.bot:
+                            continue
                         
-                        if not should_include_member_for_custom_leaderboard(member, required_role_ids=[lb.required_role_id] if lb.required_role_id else []): # type: ignore
+                        if not should_include_member_for_custom_leaderboard(member, required_role_ids=[custom_lb.required_role_id] if custom_lb.required_role_id else []):
                             continue
                         
                         user = user_map.get(member.id)

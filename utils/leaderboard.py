@@ -1,6 +1,21 @@
 from database import GuildConfig
 
 
+async def get_channel_members(channel):
+    if not channel:
+        return []
+    members = getattr(channel, "members", None)
+    if members:
+        return list(members)
+    guild = getattr(channel, "guild", None)
+    if guild and hasattr(guild, "fetch_members"):
+        try:
+            return [member async for member in guild.fetch_members(limit=None)]
+        except Exception:
+            pass
+    return []
+
+
 def get_leaderboard_channel_id(config) -> str | None:
     if not config:
         return None

@@ -4,6 +4,7 @@ from discord import app_commands
 import datetime
 from database import SessionLocal, GuildConfig, UserData, AttendanceLog, CustomLeaderboard
 from utils.leaderboard import (
+    get_channel_members,
     get_leaderboard_channel_id,
     get_main_leaderboard_role_ids,
     should_include_member_for_custom_leaderboard,
@@ -131,8 +132,10 @@ class NotificationsCog(commands.Cog):
                             uid = int(log.user_id)
                             att_map[uid] = att_map.get(uid, 0) + 1
                             
-                        for member in channel.members:
-                            if member.bot: continue
+                        members = await get_channel_members(channel)
+                        for member in members:
+                            if member.bot:
+                                continue
                             
                             if not should_include_member_for_custom_leaderboard(member, required_role_ids=[lb.required_role_id] if lb.required_role_id else []):
                                 continue

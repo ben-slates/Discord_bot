@@ -32,6 +32,8 @@ FORBIDDEN_WORDS = load_forbidden_words()
 class RynexBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
+        intents.guilds = True
+        intents.members = True
         intents.message_content = True
         intents.guild_messages = True
         intents.dm_messages = False
