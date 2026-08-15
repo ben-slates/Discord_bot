@@ -1,4 +1,125 @@
 {
   "last_flush": "2026-08-10T22:41:16.165966+05:00",
-  "entries": []
+  "entries": [
+    {
+      "link": "https://thehackernews.com/2026/08/head-mare-exploits-trueconf-flaws-to.html",
+      "title": "TrueConf Server Flaws Exploited to Replace Client Installers with PhantomCore",
+      "summary": "The threat actor known as Head Mare has been observed weaponizing security flaws in unpatched TrueConf servers once again in attacks targeting Russian companies spanning instrumentation, electronics, transport, energy, IT, and software development sectors.\n\nRussian cybersecurity vendor Kaspersky said it detected the attacks in July 2026.\n\nThe activity involves exploiting a vulnerability chain",
+      "published": "Mon, 10 Aug 2026 17:03:41 +0530",
+      "source_name": "The Hacker News",
+      "posted_at": "2026-08-10T22:46:10.782177+05:00"
+    },
+    {
+      "link": "https://thehackernews.com/2026/08/shipping-1050-more-code-watch-this.html",
+      "title": "Shipping 10\u201350\u00d7 More Code? Watch This Webinar on Securing AI-Speed Development",
+      "summary": "AI is helping development teams produce far more code, far faster. But security teams still have to review vulnerabilities, manage dependencies, prioritize fixes, and control risk at human speed.\n\nWhen software output jumps 10 to 50 times, the problem is no longer just finding vulnerabilities. It is keeping security from becoming the bottleneck, or worse, losing control of what gets shipped.",
+      "published": "Mon, 10 Aug 2026 17:22:16 +0530",
+      "source_name": "The Hacker News",
+      "posted_at": "2026-08-10T22:46:10.782177+05:00"
+    },
+    {
+      "link": "https://thehackernews.com/2026/08/new-passkey-attacks-can-recover-synced.html",
+      "title": "New Passkey Attacks Can Recover Synced Private Keys or Bypass Phishing-Resistant MFA",
+      "summary": "Three separate research efforts last week demonstrated ways to defeat passkey protections without breaking the cryptography they rest on.\n\nPasskeys are designed to replace reusable passwords and resist phishing. The attacks instead reused signed authentication material that Windows had exposed, abused a cloud-synced passkey system from malware already on the victim's machine, and used a&nbsp;",
+      "published": "Mon, 10 Aug 2026 17:55:04 +0530",
+      "source_name": "The Hacker News",
+      "posted_at": "2026-08-10T22:46:10.782177+05:00"
+    },
+    {
+      "link": "https://thehackernews.com/2026/08/kimsuky-builds-offline-ai-stack-that.html",
+      "title": "Kimsuky Builds Offline AI Stack to Boost Phishing and Automate Malware Development",
+      "summary": "North Korea's state hackers are no longer content to type prompts into public chatbots. One of the country's main espionage groups has begun running artificial intelligence (AI) offline on its own servers, connecting document-search tools to files in its possession, and collecting the software parts needed to build AI into its malware.\n\nSouth Korean security firm Genians says it uncovered the",
+      "published": "Mon, 10 Aug 2026 18:49:58 +0530",
+      "source_name": "The Hacker News",
+      "posted_at": "2026-08-10T22:46:10.782177+05:00"
+    },
+    {
+      "link": "https://thehackernews.com/2026/08/weekly-recap-ai-goes-rogue-metabase-0.html",
+      "title": "\u26a1 Weekly Recap: AI Goes Rogue, Metabase 0-Day, MCP Supply-Chain Attacks, and Router Backdoors",
+      "summary": "A lot of security problems still begin with someone doing a completely normal thing. Cloning a repo. Answering a call. Leaving a box exposed. Trusting the default.\n\nThat pretty much covers the mood this week. Old bugs are back, supply chains are getting stranger, and some exploit paths are so short you wonder what was supposed to stop them in the first place.\n\nThat\u2019s only part of it. Here\u2019s",
+      "published": "Mon, 10 Aug 2026 20:30:29 +0530",
+      "source_name": "The Hacker News",
+      "posted_at": "2026-08-10T22:46:10.782177+05:00"
+    },
+    {
+      "link": "https://www.bleepingcomputer.com/news/security/lexisnexis-shuts-down-services-after-suspicious-activity-on-servers/",
+      "title": "LexisNexis shuts down services after suspicious activity on servers",
+      "summary": "LexisNexis took its Diligence, Metabase API, and Newsdesk services offline as part of its response to unusual activity on servers hosted and managed by an unnamed third-party vendor. [...]",
+      "published": "Mon, 10 Aug 2026 08:11:52 -0400",
+      "source_name": "Bleeping Computer",
+      "posted_at": "2026-08-10T22:46:10.782177+05:00"
+    },
+    {
+      "link": "https://www.bleepingcomputer.com/news/security/member-of-the-com-sent-to-prison-for-blackmail-sextortion/",
+      "title": "Member of The Com sent to prison for blackmail, sextortion",
+      "summary": "A member of \"The Com,\" a loose-knit online cybercrime collective that targets children and teenagers, has been sentenced to two years in prison for blackmail and sextortion offenses against nearly 120 victims worldwide. [...]",
+      "published": "Mon, 10 Aug 2026 08:56:28 -0400",
+      "source_name": "Bleeping Computer",
+      "posted_at": "2026-08-10T22:46:10.782177+05:00"
+    },
+    {
+      "link": "https://www.bleepingcomputer.com/news/security/when-credentials-are-no-longer-enough-device-trust-in-the-ai-era/",
+      "title": "When Credentials Are No Longer Enough: Device Trust in the AI Era",
+      "summary": "AI is making phishing, credential theft, and social engineering faster and more efficient, while traditional trust signals such as passwords, MFA, IP reputation, and geolocation become easier to bypass. Specops explains why organizations are increasingly adding device trust to their Zero Trust strategies. [...]",
+      "published": "Mon, 10 Aug 2026 10:01:11 -0400",
+      "source_name": "Bleeping Computer",
+      "posted_at": "2026-08-10T22:46:10.782177+05:00"
+    },
+    {
+      "link": "https://www.bleepingcomputer.com/news/security/cisa-sonicwall-sma1000-flaws-now-exploited-by-ransomware-gangs/",
+      "title": "CISA: SonicWall SMA1000 flaws now exploited by ransomware gangs",
+      "summary": "CISA has confirmed that ransomware gangs have begun exploiting two recently patched SonicWall SMA1000 vulnerabilities, including a maximum-severity server-side request forgery (SSRF) flaw. [...]",
+      "published": "Mon, 10 Aug 2026 10:34:32 -0400",
+      "source_name": "Bleeping Computer",
+      "posted_at": "2026-08-10T22:46:10.782177+05:00"
+    },
+    {
+      "link": "https://www.bleepingcomputer.com/news/security/new-stormencryptor-ransomware-used-by-former-medusa-affiliate/",
+      "title": "New StormEncryptor ransomware used by former Medusa affiliate",
+      "summary": "A financially motivated threat actor previously associated with the Medusa ransomware operation is now deploying a new ransomware strain called StormEncryptor. [...]",
+      "published": "Mon, 10 Aug 2026 13:42:00 -0400",
+      "source_name": "Bleeping Computer",
+      "posted_at": "2026-08-10T22:46:10.782177+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-48158",
+      "title": "CVE-2026-48158 - use-context-selector was vulnerable to malicious code execution via compromised commits",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-48158\n  <br />\n  <strong>Published :</strong> Aug. 10, 2026, 3:56 p.m. | 27\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>use-context-selector is a React useContextSelector hook in userland Between 2026-05-18 15:57:18 and 2026-05-19 15:24:34, the default branch contained malicious commits 9d8481a513b7b0d1c0941b220c69b25de748641b through 6f2dae054ca014068bdbbb4db96006424d674124 that executed remote attacker-controlled code on developer machines during\n`npm install`. The commits were removed by force-push, but local clones, forks, and direct-SHA URLs may still contain them, and `npm install` against an affected checkout will still execute the code today. The package was not published to npm. `src/install.js` was added and wired into the `postinstall` script. It fetched a JavaScript payload from an attacker-controlled HTTPS endpoint (configurable via an environment variable), disabled TLS verification, and evaluated the response as code with `require` available. Execution was deliberately skipped on CI and cloud/serverless environments, targeting developer workstations. The second-stage payload was attacker-hosted and cannot be reconstructed. Assume full compromise of anything reachable from a Node process with the user's permissions. Those who ran `npm install` against an affected checkout on a developer machine on or after 2026-05-18 15:57:18 should treat the machine as compromised, rotate every credential the machine could reach, audit account activity** since 2026-05-18 15:57:18, and clean local clones.\n  <br />\n  <strong>Severity:</strong> 0.0 | NA\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Mon, 10 Aug 2026 15:56:59 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-10T22:46:10.782177+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-56620",
+      "title": "CVE-2026-56620 - HCL BigFix Mobile\u00a0is vulnerable to information disclosure",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-56620\n  <br />\n  <strong>Published :</strong> Aug. 10, 2026, 3:58 p.m. | 26\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>HCL BigFix Mobile\u00a0is vulnerable to information disclosure due to improper handling of exceptions and verbose error reporting.\n  <br />\n  <strong>Severity:</strong> 4.3 | MEDIUM\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Mon, 10 Aug 2026 15:58:51 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-10T22:46:10.782177+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-72724",
+      "title": "CVE-2026-72724 - Discourse: Private Chat Threat Message Disclosure via Chat Onebox Channel/Threat ID Mismatch",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-72724\n  <br />\n  <strong>Published :</strong> Aug. 10, 2026, 3:59 p.m. | 25\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>Discourse is an open-source discussion platform. Prior to 2026.1.6, 2026.5.2, 2026.6.1, and 2026.7.0, plugins/chat/lib/chat/onebox_handler.rb resolves Chat::Thread by route thread_id independently of the route channel_id before checking whether the user can preview the selected chat channel. An authenticated user can pair a public channel ID with a private thread ID in a /onebox.json request and obtain private thread message content. This issue is fixed in versions 2026.1.6, 2026.5.2, 2026.6.1, and 2026.7.0.\n  <br />\n  <strong>Severity:</strong> 0.0 | NA\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Mon, 10 Aug 2026 15:59:53 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-10T22:46:10.782177+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-72725",
+      "title": "CVE-2026-72725 - Discourse: Stored XSS in staff action logs injects staff UI",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-72725\n  <br />\n  <strong>Published :</strong> Aug. 10, 2026, 4:02 p.m. | 22\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>Discourse is an open-source discussion platform. Prior to 2026.1.6, the staff action log model rendered unescaped previous and new value fields that could inject stored cross-site scripting into the staff interface. The issue is fixed in 2026.1.6, 2026.5.2, 2026.6.1, and 2026.7.0.\n  <br />\n  <strong>Severity:</strong> 0.0 | NA\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Mon, 10 Aug 2026 16:02:56 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-10T22:46:10.782177+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-72726",
+      "title": "CVE-2026-72726 - Discourse: Unauthorized eavesdropping on private AI bot conversations.",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-72726\n  <br />\n  <strong>Published :</strong> Aug. 10, 2026, 4:05 p.m. | 19\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>Discourse is an open-source discussion platform. Prior to 2026.1.6, 2026.5.2, 2026.6.1, and 2026.7.0, an authenticated user could eavesdrop on private AI bot conversations through the AI bot reply stream. The issue is fixed in 2026.1.6, 2026.5.2, 2026.6.1, and 2026.7.0.\n  <br />\n  <strong>Severity:</strong> 0.0 | NA\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Mon, 10 Aug 2026 16:05:11 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-10T22:46:10.782177+05:00"
+    }
+  ]
 }

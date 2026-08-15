@@ -1,6 +1,8 @@
 import json
 import os
 from pathlib import Path
+import re
+import asyncio
 
 import discord
 from discord.ext import commands
@@ -28,6 +30,20 @@ def load_forbidden_words() -> set[str]:
 
 FORBIDDEN_WORDS = load_forbidden_words()
 
+# Compile a single regex to match forbidden words as whole words (not substrings).
+# Uses negative/positive lookarounds to ensure the bad word is not part of a larger word.
+try:
+    if FORBIDDEN_WORDS:
+        # sort by length desc to prefer longest matches in alternation
+        words_sorted = sorted(FORBIDDEN_WORDS, key=lambda x: -len(x))
+        escaped = [re.escape(w) for w in words_sorted]
+        pattern = r"(?<!\w)(?:" + "|".join(escaped) + r")(?!\w)"
+        FORBIDDEN_RE = re.compile(pattern, re.IGNORECASE)
+    else:
+        FORBIDDEN_RE = None
+except Exception:
+    FORBIDDEN_RE = None
+
 
 class RynexBot(commands.Bot):
     def __init__(self):
@@ -39,6 +55,9 @@ class RynexBot(commands.Bot):
         intents.dm_messages = False
         super().__init__(command_prefix="!", intents=intents)
         self.tree.on_error = self.on_app_command_error
+        # expose the forbidden-word patterns to cogs via the bot instance
+        self.FORBIDDEN_RE = FORBIDDEN_RE if 'FORBIDDEN_RE' in globals() else None
+        self.FORBIDDEN_WORDS = FORBIDDEN_WORDS if 'FORBIDDEN_WORDS' in globals() else set()
 
     async def setup_hook(self):
         for filename in os.listdir('./cogs'):
@@ -107,8 +126,9 @@ class RynexBot(commands.Bot):
         if not content:
             return
 
-        for word in FORBIDDEN_WORDS:
-            if word in content:
+        # Check message content against compiled forbidden-word regex (whole-word match)
+        try:
+            if FORBIDDEN_RE and FORBIDDEN_RE.search(content):
                 try:
                     await message.delete()
                 except discord.Forbidden:
@@ -123,6 +143,24 @@ class RynexBot(commands.Bot):
                 except Exception:
                     pass
                 return
+        except Exception:
+            # Fall back to substring matching if regex fails for any reason
+            for word in FORBIDDEN_WORDS:
+                if word in content:
+                    try:
+                        await message.delete()
+                    except discord.Forbidden:
+                        pass
+                    except discord.HTTPException:
+                        pass
+
+                    try:
+                        await message.author.send(
+                            "Your message was not sent because it contains blocked or harmful language."
+                        )
+                    except Exception:
+                        pass
+                    return
 
     async def _get_configured_log_channel(self, guild_id):
         db = SessionLocal()
@@ -139,6 +177,44 @@ bot = RynexBot()
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
+
+    # One-time startup scan: check recent history (limit 25 messages) per text channel
+    # for messages containing forbidden words and delete them if bot has permission.
+    if not hasattr(bot, "_history_scan_done") or not bot._history_scan_done:
+        bot._history_scan_done = True
+        async def _scan():
+            for guild in bot.guilds:
+                for channel in getattr(guild, "text_channels", []):
+                    try:
+                        perms = channel.permissions_for(guild.me)
+                        if not (perms.view_channel and perms.read_message_history):
+                            continue
+                        limit = 25
+                        async for msg in channel.history(limit=limit):
+                            if msg.author.bot or not msg.content:
+                                continue
+                            cont = msg.content.lower()
+                            try:
+                                hit = FORBIDDEN_RE.search(cont) if FORBIDDEN_RE else any(w in cont for w in FORBIDDEN_WORDS)
+                            except Exception:
+                                hit = any(w in cont for w in FORBIDDEN_WORDS)
+                            if hit:
+                                if perms.manage_messages:
+                                    try:
+                                        await msg.delete()
+                                        await asyncio.sleep(0.1)
+                                    except discord.Forbidden:
+                                        pass
+                                    except discord.HTTPException:
+                                        pass
+                                else:
+                                    # Can't delete; skip silently
+                                    pass
+                    except Exception as e:
+                        print(f"History scan failed in {guild.name}/{getattr(channel,'name',channel.id)}: {e}")
+
+        # Schedule scan without blocking on_ready
+        asyncio.create_task(_scan())
 
 if __name__ == "__main__":
     if not BOT_TOKEN:

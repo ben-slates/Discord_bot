@@ -120,6 +120,27 @@ class SupportCog(commands.Cog):
         config = self._get_support_config(guild_id)
         return bool(config and config.support_enabled and config.support_category)
 
+    @commands.Cog.listener()
+    async def on_guild_join(self, guild: discord.Guild):
+        db = SessionLocal()
+        try:
+            config = db.query(GuildConfig).filter_by(guild_id=str(guild.id)).first()
+            if not config:
+                config = GuildConfig(guild_id=str(guild.id), support_enabled=True)
+                db.add(config)
+            else:
+                config.support_enabled = True
+            db.commit()
+        except Exception:
+            pass
+        finally:
+            db.close()
+
+        try:
+            await self.bot.tree.sync(guild=guild)
+        except Exception:
+            pass
+
     async def sync_support_commands(self, guild_id=None):
         if not self._support_command_objects:
             return
@@ -259,6 +280,19 @@ class SupportCog(commands.Cog):
     @app_commands.command(name="question", description="Ask a question in a highlighted announcement box")
     @app_commands.checks.cooldown(1, 10, key=lambda i: (i.guild_id, i.user.id))
     async def question(self, interaction: discord.Interaction, text: str):
+        # Moderate the provided question text using the bot's forbidden-word pattern.
+        forbidden_re = getattr(self.bot, "FORBIDDEN_RE", None)
+        forbidden_words = getattr(self.bot, "FORBIDDEN_WORDS", set())
+        txt = (text or "").strip().lower()
+        try:
+            is_bad = bool(forbidden_re.search(txt)) if forbidden_re else any(w in txt for w in forbidden_words)
+        except Exception:
+            is_bad = any(w in txt for w in forbidden_words)
+
+        if is_bad:
+            await interaction.response.send_message("Your question was not posted because it contains blocked or harmful language.", ephemeral=True)
+            return
+
         embed = discord.Embed(
             title="❓ Question",
             description=text,
