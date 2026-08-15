@@ -285,9 +285,9 @@ class SupportCog(commands.Cog):
         forbidden_words = getattr(self.bot, "FORBIDDEN_WORDS", set())
         txt = (text or "").strip().lower()
         try:
-            is_bad = bool(forbidden_re.search(txt)) if forbidden_re else any(w in txt for w in forbidden_words)
+            is_bad = bool(forbidden_re.search(txt)) if forbidden_re else any(token in forbidden_words for token in __import__('re').findall(r"\w+", txt))
         except Exception:
-            is_bad = any(w in txt for w in forbidden_words)
+            is_bad = any(token in forbidden_words for token in __import__('re').findall(r"\w+", txt))
 
         if is_bad:
             await interaction.response.send_message("Your question was not posted because it contains blocked or harmful language.", ephemeral=True)

@@ -144,9 +144,10 @@ class RynexBot(commands.Bot):
                     pass
                 return
         except Exception:
-            # Fall back to substring matching if regex fails for any reason
-            for word in FORBIDDEN_WORDS:
-                if word in content:
+            # Fall back to token-based matching if regex fails for any reason
+            tokens = re.findall(r"\w+", content)
+            for token in tokens:
+                if token in FORBIDDEN_WORDS:
                     try:
                         await message.delete()
                     except discord.Forbidden:
@@ -195,9 +196,9 @@ async def on_ready():
                                 continue
                             cont = msg.content.lower()
                             try:
-                                hit = FORBIDDEN_RE.search(cont) if FORBIDDEN_RE else any(w in cont for w in FORBIDDEN_WORDS)
+                                hit = bool(FORBIDDEN_RE.search(cont)) if FORBIDDEN_RE else any(token in FORBIDDEN_WORDS for token in re.findall(r"\w+", cont))
                             except Exception:
-                                hit = any(w in cont for w in FORBIDDEN_WORDS)
+                                hit = any(token in FORBIDDEN_WORDS for token in re.findall(r"\w+", cont))
                             if hit:
                                 if perms.manage_messages:
                                     try:

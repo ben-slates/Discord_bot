@@ -1,0 +1,125 @@
+{
+  "last_flush": "2026-08-15T13:21:01.235563+05:00",
+  "entries": [
+    {
+      "link": "https://thehackernews.com/2026/08/enterprise-defenses-recovered-at-edge.html",
+      "title": "Enterprise Defenses Recovered at the Edge and Collapsed Inside",
+      "summary": "Enterprise defenses are tuned to catch the attacks that make noise. This year's data shows attackers winning by making none.\n\nAccording to Picus Labs' new Blue Report 2026, which measured more than 338 million real attack simulations across actual client production environments in the first half of 2026, defenses are having one of their strongest years yet. Average prevention effectiveness",
+      "published": "Wed, 12 Aug 2026 17:11:34 +0530",
+      "source_name": "The Hacker News",
+      "posted_at": "2026-08-15T13:22:36.966883+05:00"
+    },
+    {
+      "link": "https://thehackernews.com/2026/08/openai-anthropic-google-api-flaw-let.html",
+      "title": "OpenAI, Anthropic, Google API Flaw Let Weaker AI Models Decode Stronger Models' Reasoning",
+      "summary": "A newly disclosed flaw in the way OpenAI, Anthropic, and Google carried hidden AI reasoning between API calls let researchers recover internal reasoning and secrets from session logs, including API keys and passwords.\n\nThe weakness affected encrypted reasoning objects used by the providers' reasoning APIs, where a block created in one session could be replayed into another and, during testing,",
+      "published": "Wed, 12 Aug 2026 17:17:38 +0530",
+      "source_name": "The Hacker News",
+      "posted_at": "2026-08-15T13:22:36.966883+05:00"
+    },
+    {
+      "link": "https://thehackernews.com/2026/08/737-chrome-vpn-extensions-caught.html",
+      "title": "737 Chrome VPN Extensions Caught Routing Traffic Through Proxies. Check If You Have One",
+      "summary": "A massive set of 737 free VPN and proxy extensions have been found to mainly target Russian-speaking users seeking access to blocked services with an aim to intercept browser traffic and route them through a proxy infrastructure.\n\nThe extensions, published across at least 40 Chrome Web Store developer accounts, racked up 75,486 installs. Of those identified, 274 have been found to impersonate 66",
+      "published": "Wed, 12 Aug 2026 19:39:50 +0530",
+      "source_name": "The Hacker News",
+      "posted_at": "2026-08-15T13:22:36.966883+05:00"
+    },
+    {
+      "link": "https://thehackernews.com/2026/08/lazarus-exploits-windows-zero-day-to.html",
+      "title": "Lazarus Exploits Windows Zero-Day to Gain SYSTEM Access and Deploy Backdoor",
+      "summary": "The North Korean threat actor known as Lazarus Group has been attributed to the zero-day exploitation of a newly patched security flaw impacting Microsoft Windows to deliver a never-before-seen backdoor targeting defense and aerospace companies across France, Germany, Brazil, and India.\n\nThe activity, per Check Point Research, is part of Operation Dream Job, a long-running cyber espionage and",
+      "published": "Wed, 12 Aug 2026 23:09:27 +0530",
+      "source_name": "The Hacker News",
+      "posted_at": "2026-08-15T13:22:36.966883+05:00"
+    },
+    {
+      "link": "https://thehackernews.com/2026/08/attackers-exploit-sharepoint.html",
+      "title": "Attackers Exploit SharePoint Authentication Bypass After Public PoC Release",
+      "summary": "Threat actors have begun to exploit a newly disclosed Microsoft SharePoint vulnerability following the release of a proof-of-concept (PoC) code.\n\nThe vulnerability in question is CVE-2026-55040 (CVSS score: 9.1), which refers to a critical security feature bypass that stems from weak authentication. It was patched by Microsoft as part of its July 2026 Patch Tuesday updates.\n\n\"The authentication",
+      "published": "Thu, 13 Aug 2026 11:39:48 +0530",
+      "source_name": "The Hacker News",
+      "posted_at": "2026-08-15T13:22:36.966883+05:00"
+    },
+    {
+      "link": "https://www.bleepingcomputer.com/news/security/max-severity-sap-commerce-cloud-flaw-now-targeted-in-attacks/",
+      "title": "Max severity SAP Commerce Cloud flaw now targeted in attacks",
+      "summary": "A maximum-severity SAP Commerce Cloud\u00a0remote code execution vulnerability patched three days ago\u00a0is already being targeted in attacks, according to threat intelligence company Defused. [...]",
+      "published": "Fri, 14 Aug 2026 09:45:18 -0400",
+      "source_name": "Bleeping Computer",
+      "posted_at": "2026-08-15T13:22:36.966883+05:00"
+    },
+    {
+      "link": "https://www.bleepingcomputer.com/news/security/the-modern-attack-chain-rethinking-google-workspace-security-in-the-age-of-ai/",
+      "title": "The Modern Attack Chain: Rethinking Google Workspace Security in the Age of AI",
+      "summary": "Google Workspace attacks do not always begin with phishing. Stolen OAuth tokens can provide another path into Gmail, Drive, and connected systems. Material Security explains why organizations need defenses that cover the entire Workspace attack chain. [...]",
+      "published": "Fri, 14 Aug 2026 10:00:10 -0400",
+      "source_name": "Bleeping Computer",
+      "posted_at": "2026-08-15T13:22:36.966883+05:00"
+    },
+    {
+      "link": "https://www.bleepingcomputer.com/news/security/hackers-exploit-macos-screen-sharing-flaw-to-deploy-monero-miner/",
+      "title": "Hackers exploit macOS Screen Sharing flaw to deploy Monero miner",
+      "summary": "The Netherlands' National Cyber Security Centre (NCSC) is warning that hackers are actively exploiting a macOS authentication bypass vulnerability after public exploit code emerged. [...]",
+      "published": "Fri, 14 Aug 2026 10:59:55 -0400",
+      "source_name": "Bleeping Computer",
+      "posted_at": "2026-08-15T13:22:36.966883+05:00"
+    },
+    {
+      "link": "https://www.bleepingcomputer.com/news/security/hackers-arrested-over-30m-bank-fraud-exploiting-service-provider-flaw/",
+      "title": "Hackers arrested over \u20ac30M bank fraud exploiting service provider flaw",
+      "summary": "Four cybercriminals were arrested in Brazil, and three others were charged in Europe over allegations that they exploited a vulnerability at a service provider, allowing them to withdraw funds from Commerzbank customers' bank accounts. [...]",
+      "published": "Fri, 14 Aug 2026 14:04:26 -0400",
+      "source_name": "Bleeping Computer",
+      "posted_at": "2026-08-15T13:22:36.966883+05:00"
+    },
+    {
+      "link": "https://www.bleepingcomputer.com/news/artificial-intelligence/how-anthropic-plans-to-watermark-claudes-ai-generated-text/",
+      "title": "How Anthropic plans to watermark Claude's AI-generated text",
+      "summary": "It could soon become easier to identify AI-generated content, even if it's not the usual \"It's Not X, it's Y\" type of post you'd come across on LinkedIn and other socials. [...]",
+      "published": "Fri, 14 Aug 2026 19:24:17 -0400",
+      "source_name": "Bleeping Computer",
+      "posted_at": "2026-08-15T13:22:36.966883+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-74437",
+      "title": "CVE-2026-74437 - media: uvcvideo: Fix deadlock if uvc_status_stop is called from async_ctrl.work",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-74437\n  <br />\n  <strong>Published :</strong> Aug. 15, 2026, 6:22 a.m. | 1\u00a0hour, 23\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>In the Linux kernel, the following vulnerability has been resolved:\n\nmedia: uvcvideo: Fix deadlock if uvc_status_stop is called from async_ctrl.work\n\nIf a UVC camera has an asynchronous control, uvc_status_stop may be\ncalled from async_ctrl.work:\n\nuvc_ctrl_status_event_work()\n    uvc_ctrl_status_event()\n        uvc_ctrl_clear_handle()\n\t    uvc_pm_put()\n\t        uvc_status_put()\n\t\t    uvc_status_stop()\n\t\t        cancel_work_sync()\n\nThis will cause a deadlock, since cancel_work_sync will wait for\nuvc_ctrl_status_event_work to complete before returning.\n\nFix this by returning early from uvc_status_stop if we are currently in\nthe work function. flush_status now remains false until uvc_status_start\nis called again, ensuring that uvc_ctrl_status_event_work won't resubmit\nthe URB.\n  <br />\n  <strong>Severity:</strong> 0.0 | NA\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Sat, 15 Aug 2026 06:22:45 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-15T13:22:36.966883+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-74438",
+      "title": "CVE-2026-74438 - crypto: sun4i-ss - Remove insecure and unused rng_alg",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-74438\n  <br />\n  <strong>Published :</strong> Aug. 15, 2026, 6:22 a.m. | 1\u00a0hour, 23\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>In the Linux kernel, the following vulnerability has been resolved:\n\ncrypto: sun4i-ss - Remove insecure and unused rng_alg\n\nRemove sun4i_ss_rng, as it is insecure and unused:\n\n- It has multiple vulnerabilities.  sun4i_ss_prng_seed() is missing\n  locking and has a buffer overflow.  sun4i_ss_prng_generate() fails to\n  fill the entire buffer with cryptographic random bytes, because it\n  rounds the destination length down and also doesn't actually wait for\n  the hardware to be ready before pulling bytes from it.\n\n- No user of this code is known.  It's usable only theoretically via the\n  \"rng\" algorithm type of AF_ALG.  But userspace actually just uses the\n  actual Linux RNG (/dev/random etc) instead.  And rng_algs don't\n  contribute entropy to the actual Linux RNG either.  (This may have\n  been confused with hwrng, which does contribute entropy.)\n\nThe sun4i_ss_prng_seed() buffer overflow was reported by Tianchu Chen\nand discovered by Atuin - Automated Vulnerability Discovery Engine\n\nThere's no point in fixing all these vulnerabilities individually when\nthis is unused code, so let's just remove it.\n  <br />\n  <strong>Severity:</strong> 0.0 | NA\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Sat, 15 Aug 2026 06:22:45 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-15T13:22:36.966883+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-74439",
+      "title": "CVE-2026-74439 - iommu/vt-d: Clear Present bit before tearing down scalable-mode context entry",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-74439\n  <br />\n  <strong>Published :</strong> Aug. 15, 2026, 6:22 a.m. | 1\u00a0hour, 23\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>In the Linux kernel, the following vulnerability has been resolved:\n\niommu/vt-d: Clear Present bit before tearing down scalable-mode context entry\n\ndevice_pasid_table_teardown() zeroes the 128-bit scalable-mode context\nentry with context_clear_entry() while the Present bit is still set. This\ncreates a window where the hardware can fetch a torn entry, with some\nfields already zeroed while Present is still set, leading to unpredictable\nbehavior or spurious faults. The context-cache invalidation is issued only\nafter the entry has been zeroed, and intel_pasid_free_table() then frees\nthe PASID directory pages, so the IOMMU can keep walking a stale Present=1\nentry that points at freed memory.\n\nWhile x86 provides strong write ordering, the compiler may reorder the two\n64-bit writes to the entry, and the hardware fetch is not guaranteed to be\natomic with respect to multiple CPU writes.\n\nCommit c1e4f1dccbe9d (\"iommu/vt-d: Clear Present bit before tearing down\ncontext entry\") fixed this exact pattern in domain_context_clear_one() and\nthe copied-context path, but device_pasid_table_teardown() was not\nconverted.\n\nAlign it with the \"Guidance to Software for Invalidations\" in the VT-d\nspec, Section 6.5.3.3, using the same ownership handshake as the sibling\nfix: clear only the Present bit, flush it to the IOMMU, perform the\ncontext-cache invalidation, and only then zero the rest of the entry.\n  <br />\n  <strong>Severity:</strong> 0.0 | NA\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Sat, 15 Aug 2026 06:22:46 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-15T13:22:36.966883+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-14279",
+      "title": "CVE-2026-14279 - Wholesale Market <= 2.2.2 - Authenticated (Subscriber+) Privilege Escalation via 'role_required' Parameter",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-14279\n  <br />\n  <strong>Published :</strong> Aug. 15, 2026, 7:16 a.m. | 29\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>The Wholesale Market plugin for WordPress is vulnerable to privilege escalation in versions up to, and including, 2.2.2 via the ced_wholesale_request_send AJAX action. The ced_wholesale_request_send_callback() handler only verifies a nonce (which is exposed to any authenticated user through wp_localize_script on the frontend) and that the caller has a positive user ID, then calls WP_User::add_role() with the client-supplied role_required POST parameter without restricting the value to an allowlist of wholesale roles. This makes it possible for authenticated attackers, with Subscriber-level access and above, to elevate their privileges to Administrator when the site administrator has enabled the 'Assigning requested role directly' option.\n  <br />\n  <strong>Severity:</strong> 8.8 | HIGH\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Sat, 15 Aug 2026 07:16:19 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-15T13:22:36.966883+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-15826",
+      "title": "CVE-2026-15826 - User Profile Builder <= 3.16.4 - Unauthenticated Authentication Bypass via Type Confusion to Administrator Account Takeover via 'username' Parameter",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-15826\n  <br />\n  <strong>Published :</strong> Aug. 15, 2026, 7:16 a.m. | 29\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>The User Profile Builder plugin for WordPress is vulnerable to Authentication Bypass via Type Confusion in versions up to, and including, 3.16.4. This is due to the wppb_log_in_user() function calling absint() on the return value of wp_insert_user() before performing an is_wp_error() check \u2014 when a registration is submitted with a 61\u201370 character username, WordPress core rejects it with a WP_Error object, but absint() coerces that object to the integer 1 before the error check can short-circuit execution, causing the plugin to bind and return a transient-backed autologin nonce tied to user ID 1. This makes it possible for unauthenticated attackers to log in as the site's Administrator account (user ID 1), resulting in full administrative takeover of the site.\n  <br />\n  <strong>Severity:</strong> 9.8 | CRITICAL\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Sat, 15 Aug 2026 07:16:19 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-15T13:22:36.966883+05:00"
+    }
+  ]
+}
