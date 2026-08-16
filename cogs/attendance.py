@@ -88,39 +88,9 @@ class AttendanceCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_presence_update(self, before: discord.Member, after: discord.Member):
-        # Auto-mark attendance only when a user becomes active (online or dnd)
-        if after.bot or not after.guild:
-            return
-
-        status = str(after.status)
-        # Only consider 'online' and 'dnd' as active/present
-        if status not in ("online", "dnd"):
-            return
-
-        import asyncio
-        # If attendance already recorded (e.g., via message), skip
-        exists = await asyncio.to_thread(self._attendance_exists, after.guild.id, after.id)
-        if exists:
-            return
-
-        # Fast in-memory check: if user sent a message today
-        try:
-            gid = str(after.guild.id)
-            if gid in self._message_activity and after.id in self._message_activity[gid]:
-                await asyncio.to_thread(self._mark_presence_attendance, after.guild.id, after.id)
-                return
-        except Exception:
-            pass
-
-        # If user is currently in a voice channel, mark attendance
-        try:
-            if getattr(after, 'voice', None) and getattr(after.voice, 'channel', None):
-                await asyncio.to_thread(self._mark_presence_attendance, after.guild.id, after.id)
-                return
-        except Exception:
-            pass
-
-        # No recent-message history scan here; we rely on DB + in-memory activity and voice checks.
+        # Presence updates no longer mark attendance. Attendance is recorded only when
+        # a user sends a message (`on_message`) or joins/is in voice (`on_voice_state_update`).
+        return
 
     def _mark_message_attendance(self, guild_id: int, author_id: int):
         db = SessionLocal()
@@ -394,6 +364,111 @@ class AttendanceCog(commands.Cog):
             await interaction.response.send_message(embed=embed)
         finally:
             db.close()
+
+    @app_commands.command(name="activity", description="(Admin) View in-memory message activity and current voice participants")
+    @app_commands.default_permissions(administrator=True)
+    async def activity(self, interaction: discord.Interaction):
+        db = SessionLocal()
+        try:
+            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            if not config or not config.attendance_enabled or not config.attendance_channel:
+                await interaction.response.send_message("Attendance is not enabled for this server.", ephemeral=True)
+                return
+            if str(interaction.channel_id) != config.attendance_channel:
+                await interaction.response.send_message(f"This command can only be used in <#{config.attendance_channel}>.", ephemeral=True)
+                return
+
+            await interaction.response.defer(ephemeral=True)
+
+            gid = str(interaction.guild_id)
+            msg_ids = list(self._message_activity.get(gid, []))[:25]
+            members_from_msgs = []
+            for uid in msg_ids:
+                m = interaction.guild.get_member(int(uid))
+                if m:
+                    members_from_msgs.append(f"{m.display_name} ({m.id})")
+                else:
+                    members_from_msgs.append(f"Unknown ({uid})")
+
+            # voice participants
+            voice_members = []
+            try:
+                for vc in interaction.guild.voice_channels:
+                    for m in vc.members:
+                        if not m.bot:
+                            voice_members.append(f"{m.display_name} in #{vc.name}")
+            except Exception:
+                pass
+
+            embed = discord.Embed(title="Attendance Activity (in-memory)", color=discord.Color.blurple())
+            embed.add_field(name="Message Activity (last 25, since restart)", value=("\n".join(members_from_msgs) if members_from_msgs else "None"), inline=False)
+            embed.add_field(name="Voice Participants (now)", value=("\n".join(voice_members[:50]) if voice_members else "None"), inline=False)
+            embed.set_footer(text="In-memory data resets on bot restart or daily cleanup")
+            await interaction.followup.send(embed=embed)
+        finally:
+            db.close()
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        # One-time automatic scan at startup: scan recent messages (25 per channel)
+        # and current voice participants for each guild where attendance is enabled.
+        if getattr(self, "_initial_scan_done", False):
+            return
+        self._initial_scan_done = True
+        await self.bot.wait_until_ready()
+        import asyncio
+        for guild in self.bot.guilds:
+            db = SessionLocal()
+            try:
+                config = db.query(GuildConfig).filter_by(guild_id=str(guild.id)).first()
+            finally:
+                db.close()
+            if not config or not config.attendance_enabled:
+                continue
+
+            marked = set()
+            # Scan recent messages, but only mark messages from TODAY (timezone UTC+5)
+            tz = datetime.timezone(datetime.timedelta(hours=5))
+            today_str = datetime.datetime.now(tz).strftime('%Y-%m-%d')
+            for channel in getattr(guild, 'text_channels', []):
+                try:
+                    perms = channel.permissions_for(guild.me)
+                    if not (perms.view_channel and perms.read_message_history):
+                        continue
+                    async for msg in channel.history(limit=25):
+                        if not msg.author or msg.author.bot or not msg.created_at:
+                            continue
+                        try:
+                            msg_date = msg.created_at.astimezone(tz).strftime('%Y-%m-%d')
+                        except Exception:
+                            msg_date = msg.created_at.strftime('%Y-%m-%d')
+                        # Only consider messages from today
+                        if msg_date != today_str:
+                            continue
+                        await asyncio.to_thread(self._mark_message_attendance, guild.id, msg.author.id)
+                        marked.add(msg.author.id)
+                except Exception:
+                    continue
+                await asyncio.sleep(0.05)
+
+            # Mark current voice participants
+            try:
+                for vc in guild.voice_channels:
+                    for m in vc.members:
+                        if m.bot:
+                            continue
+                        await asyncio.to_thread(self._mark_presence_attendance, guild.id, m.id)
+                        marked.add(m.id)
+            except Exception:
+                pass
+
+            # Update in-memory activity
+            try:
+                gid = str(guild.id)
+                for uid in list(marked)[:1000]:
+                    self._message_activity[gid].add(uid)
+            except Exception:
+                pass
 
 async def setup(bot):
     await bot.add_cog(AttendanceCog(bot))
