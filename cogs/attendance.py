@@ -68,13 +68,64 @@ class AttendanceCog(commands.Cog):
         finally:
             db.close()
 
+    def _attendance_exists(self, guild_id: int, user_id: int) -> bool:
+        db = SessionLocal()
+        try:
+            today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))).strftime('%Y-%m-%d')
+            log = db.query(AttendanceLog).filter_by(guild_id=str(guild_id), user_id=str(user_id), date=today).first()
+            return bool(log)
+        finally:
+            db.close()
+
     @commands.Cog.listener()
     async def on_presence_update(self, before: discord.Member, after: discord.Member):
-        # Auto-mark attendance if a user comes online (is active for even 1 second)
-        if after.bot or str(after.status) == "offline":
+        # Auto-mark attendance only when a user becomes active (online or dnd)
+        if after.bot or not after.guild:
             return
+
+        status = str(after.status)
+        # Only consider 'online' and 'dnd' as active/present
+        if status not in ("online", "dnd"):
+            return
+
         import asyncio
-        await asyncio.to_thread(self._mark_presence_attendance, after.guild.id, after.id)
+        # If attendance already recorded (e.g., via message), skip
+        exists = await asyncio.to_thread(self._attendance_exists, after.guild.id, after.id)
+        if exists:
+            return
+
+        # If user is currently in a voice channel, mark attendance
+        try:
+            if getattr(after, 'voice', None) and getattr(after.voice, 'channel', None):
+                await asyncio.to_thread(self._mark_presence_attendance, after.guild.id, after.id)
+                return
+        except Exception:
+            pass
+
+        # Otherwise, do a lightweight scan for recent messages by this user in the guild (small per-channel limit)
+        try:
+            tz = datetime.timezone(datetime.timedelta(hours=5))
+            today_str = datetime.datetime.now(tz).strftime('%Y-%m-%d')
+            for channel in getattr(after.guild, 'text_channels', []):
+                try:
+                    perms = channel.permissions_for(after.guild.me)
+                    if not (perms.view_channel and perms.read_message_history):
+                        continue
+                    async for msg in channel.history(limit=25):
+                        if msg.author.id != after.id or not msg.created_at:
+                            continue
+                        try:
+                            msg_date = msg.created_at.astimezone(tz).strftime('%Y-%m-%d')
+                        except Exception:
+                            msg_date = msg.created_at.strftime('%Y-%m-%d')
+                        if msg_date == today_str:
+                            await asyncio.to_thread(self._mark_presence_attendance, after.guild.id, after.id)
+                            return
+                except Exception:
+                    continue
+        except Exception:
+            # As a fallback, mark presence (best-effort)
+            await asyncio.to_thread(self._mark_presence_attendance, after.guild.id, after.id)
 
     def _mark_message_attendance(self, guild_id: int, author_id: int):
         db = SessionLocal()
@@ -98,6 +149,22 @@ class AttendanceCog(commands.Cog):
             return
         import asyncio
         await asyncio.to_thread(self._mark_message_attendance, message.guild.id, message.author.id)
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+        # Mark attendance when a user joins a voice channel (and they are not a bot)
+        if member.bot or not member.guild:
+            return
+
+        # Only mark for active statuses (online or dnd)
+        status = str(member.status)
+        if status not in ("online", "dnd"):
+            return
+
+        # If they joined a voice channel (before was None and after is not None), mark attendance
+        if before.channel is None and after.channel is not None:
+            import asyncio
+            await asyncio.to_thread(self._mark_presence_attendance, member.guild.id, member.id)
 
 
     @app_commands.command(name="stats", description="Shows overall attendance statistics")

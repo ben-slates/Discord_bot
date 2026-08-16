@@ -50,6 +50,7 @@ class RynexBot(commands.Bot):
         intents = discord.Intents.default()
         intents.guilds = True
         intents.members = True
+        intents.presences = True
         intents.message_content = True
         intents.guild_messages = True
         intents.dm_messages = False
