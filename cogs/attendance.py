@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import datetime
+from collections import defaultdict
 import io
 import csv
 from database import SessionLocal, GuildConfig, UserData, AttendanceLog, HallOfFameEntry
@@ -9,6 +10,8 @@ from database import SessionLocal, GuildConfig, UserData, AttendanceLog, HallOfF
 class AttendanceCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        # in-memory cache: guild_id (str) -> set of user ids who sent a message today
+        self._message_activity = defaultdict(set)
         self.daily_cleanup.start()
 
     def cog_unload(self):
@@ -16,6 +19,12 @@ class AttendanceCog(commands.Cog):
 
     @tasks.loop(time=datetime.time(hour=12, minute=0, tzinfo=datetime.timezone(datetime.timedelta(hours=5))))
     async def daily_cleanup(self):
+        # Clear today's in-memory message activity at the start of the daily cleanup
+        try:
+            self._message_activity.clear()
+        except Exception:
+            pass
+
         for guild in self.bot.guilds:
             db = SessionLocal()
             try:
@@ -94,6 +103,15 @@ class AttendanceCog(commands.Cog):
         if exists:
             return
 
+        # Fast in-memory check: if user sent a message today
+        try:
+            gid = str(after.guild.id)
+            if gid in self._message_activity and after.id in self._message_activity[gid]:
+                await asyncio.to_thread(self._mark_presence_attendance, after.guild.id, after.id)
+                return
+        except Exception:
+            pass
+
         # If user is currently in a voice channel, mark attendance
         try:
             if getattr(after, 'voice', None) and getattr(after.voice, 'channel', None):
@@ -102,30 +120,7 @@ class AttendanceCog(commands.Cog):
         except Exception:
             pass
 
-        # Otherwise, do a lightweight scan for recent messages by this user in the guild (small per-channel limit)
-        try:
-            tz = datetime.timezone(datetime.timedelta(hours=5))
-            today_str = datetime.datetime.now(tz).strftime('%Y-%m-%d')
-            for channel in getattr(after.guild, 'text_channels', []):
-                try:
-                    perms = channel.permissions_for(after.guild.me)
-                    if not (perms.view_channel and perms.read_message_history):
-                        continue
-                    async for msg in channel.history(limit=25):
-                        if msg.author.id != after.id or not msg.created_at:
-                            continue
-                        try:
-                            msg_date = msg.created_at.astimezone(tz).strftime('%Y-%m-%d')
-                        except Exception:
-                            msg_date = msg.created_at.strftime('%Y-%m-%d')
-                        if msg_date == today_str:
-                            await asyncio.to_thread(self._mark_presence_attendance, after.guild.id, after.id)
-                            return
-                except Exception:
-                    continue
-        except Exception:
-            # As a fallback, mark presence (best-effort)
-            await asyncio.to_thread(self._mark_presence_attendance, after.guild.id, after.id)
+        # No recent-message history scan here; we rely on DB + in-memory activity and voice checks.
 
     def _mark_message_attendance(self, guild_id: int, author_id: int):
         db = SessionLocal()
@@ -147,6 +142,12 @@ class AttendanceCog(commands.Cog):
     async def on_message(self, message: discord.Message):
         if message.author.bot or not message.guild:
             return
+        # Record in-memory that this user sent a message today for quick presence checks
+        try:
+            self._message_activity[str(message.guild.id)].add(message.author.id)
+        except Exception:
+            pass
+
         import asyncio
         await asyncio.to_thread(self._mark_message_attendance, message.guild.id, message.author.id)
 
