@@ -136,7 +136,7 @@ class LevelingCog(commands.Cog):
                 db.close()
 
     @app_commands.command(name="rank", description="Check your rank")
-    async def rank(self, interaction: discord.Interaction, member: discord.Member = None):
+    async def rank(self, interaction: discord.Interaction, member: discord.User = None):
         db = SessionLocal()
         try:
             config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
@@ -149,6 +149,13 @@ class LevelingCog(commands.Cog):
                 return
 
             member = member or interaction.user
+            # If target is not a guild Member (left/removed), try to resolve for display
+            member_obj = None
+            try:
+                member_obj = interaction.guild.get_member(int(member.id)) if interaction.guild else None
+            except Exception:
+                member_obj = None
+
             user = self.get_user(db, member.id)
             
             all_users = db.query(UserData).order_by(UserData.xp.desc()).all()
@@ -160,12 +167,19 @@ class LevelingCog(commands.Cog):
                     
             xp_needed = str(max(calculate_required_xp(user.level) - user.xp, 0))
             
+            display_name = member_obj.display_name if member_obj else getattr(member, "name", str(member.id))
+            avatar_url = None
+            try:
+                avatar_url = member_obj.display_avatar.url if member_obj and member_obj.display_avatar else getattr(member, "display_avatar", None).url
+            except Exception:
+                avatar_url = None
+
             embed = discord.Embed(
-                title=f"{member.display_name}'s Rank", 
+                title=f"{display_name}'s Rank", 
                 description="Progress, leaderboard position, and daily earning status.", 
                 color=discord.Color.blue()
             )
-            embed.set_thumbnail(url=member.display_avatar.url if member.display_avatar else None)
+            embed.set_thumbnail(url=avatar_url)
             embed.add_field(name="Current Level", value=f"`{user.level}`", inline=True)
             embed.add_field(name="Total XP", value=f"`{user.xp}`", inline=True)
             embed.add_field(name="Rank Position", value=f"`#{rank_pos}`" if rank_pos else "`Unranked`", inline=True)
@@ -268,7 +282,7 @@ class LevelingCog(commands.Cog):
 
 
     @app_commands.command(name="rankcard", description="Generate a rank card image.")
-    async def rankcard(self, interaction: discord.Interaction, member: discord.Member = None):
+    async def rankcard(self, interaction: discord.Interaction, member: discord.User = None):
         db = SessionLocal()
         try:
             config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
@@ -282,6 +296,11 @@ class LevelingCog(commands.Cog):
 
             await interaction.response.defer()
             target = member or interaction.user
+            member_obj = None
+            try:
+                member_obj = interaction.guild.get_member(int(target.id)) if interaction.guild else None
+            except Exception:
+                member_obj = None
             
             try:
                 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "utils"))

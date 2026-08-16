@@ -141,7 +141,7 @@ class AttendanceCog(commands.Cog):
         day="Format: YYYY-MM-DD (e.g. 2024-05-15)",
         user="Specific user to export"
     )
-    async def export(self, interaction: discord.Interaction, month: str = None, day: str = None, user: discord.Member = None):
+    async def export(self, interaction: discord.Interaction, month: str = None, day: str = None, user: discord.User = None):
         db = SessionLocal()
         try:
             config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
@@ -216,7 +216,7 @@ class AttendanceCog(commands.Cog):
             db.close()
 
     @app_commands.command(name="user", description="Shows attendance history of a member")
-    async def user(self, interaction: discord.Interaction, member: discord.Member = None):
+    async def user(self, interaction: discord.Interaction, member: discord.User = None):
         db = SessionLocal()
         try:
             config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
@@ -231,6 +231,14 @@ class AttendanceCog(commands.Cog):
                 return
 
             target = member or interaction.user
+            # If the provided user is not a Member (left/removed), attempt to resolve Member for display purposes
+            member_obj = None
+            try:
+                member_obj = interaction.guild.get_member(int(target.id)) if interaction.guild else None
+            except Exception:
+                member_obj = None
+
+            display_name = member_obj.display_name if member_obj else getattr(target, "name", f"Unknown ({target.id})")
             target_id_str = str(target.id)
 
             total_presents = db.query(AttendanceLog).filter_by(
@@ -242,11 +250,10 @@ class AttendanceCog(commands.Cog):
                 return
 
             embed = discord.Embed(
-                title=f"Attendance Record: {target.display_name}",
+                title=f"Attendance Record: {display_name}",
                 color=discord.Color.blue(),
             )
-
-            embed.add_field(name="Username", value=target.name, inline=True)
+            embed.add_field(name="Username", value=getattr(target, "name", str(target.id)), inline=True)
             embed.add_field(name="Total Presents", value=str(total_presents), inline=True)
 
             recent_days = []

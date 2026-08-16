@@ -82,25 +82,73 @@ class RynexBot(commands.Bot):
             print("Synced globally (skipped due to dev rate limit)")
 
     async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
-        # Notify the user running the command
-        try:
-            if interaction.response.is_done():
-                await interaction.followup.send(f" An unexpected error occurred: {error}", ephemeral=True)
-            else:
-                await interaction.response.send_message(f" An unexpected error occurred: {error}", ephemeral=True)
-        except:
-            pass
-            
+        # Friendly handling for common app-command errors while still logging full tracebacks
+        # Map common error class names to user-friendly messages
+        friendly_by_name = {
+            "TransformerError": "I couldn't resolve one of the command inputs (they may have left the server or the value is invalid).",
+            "MissingPermissions": "You don't have the required permissions to run this command.",
+            "BotMissingPermissions": "I don't have the required permissions to perform that action.",
+            "CheckFailure": "You don't meet the requirements to run this command.",
+            "CommandOnCooldown": "This command is on cooldown. Please try again later.",
+            "MissingRequiredArgument": "A required command argument is missing. Please check the command usage.",
+            "CommandInvokeError": "An error occurred while executing the command.",
+        }
+
+        sent_friendly = False
+        err_name = type(error).__name__
+        msg = friendly_by_name.get(err_name)
+
+        # Special handling for cooldown to include retry info if available
+        if err_name == "CommandOnCooldown":
+            retry = getattr(error, "retry_after", None)
+            if retry is not None:
+                msg = f"This command is on cooldown. Try again in {int(retry)} seconds."
+
+        if msg:
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(msg, ephemeral=True)
+                else:
+                    await interaction.response.send_message(msg, ephemeral=True)
+                sent_friendly = True
+            except Exception:
+                sent_friendly = False
+
+        # If no friendly message sent above, send a generic fallback
+        if not sent_friendly and not (msg and sent_friendly):
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(f" An unexpected error occurred: {error}", ephemeral=True)
+                else:
+                    await interaction.response.send_message(f" An unexpected error occurred: {error}", ephemeral=True)
+            except:
+                pass
+
+        # Always post a short friendly entry and the full traceback to the configured log channel for diagnostics
         import traceback
         err_str = "".join(traceback.format_exception(type(error), error, error.__traceback__))
         channel = await self._get_configured_log_channel(interaction.guild_id)
         if channel:
             try:
-                if len(err_str) > 4000:
-                    err_str = err_str[-4000:]
-                embed = discord.Embed(title=f"Command Error in /{interaction.command.name if interaction.command else 'unknown'}", description=f"```py\n{err_str}\n```", color=discord.Color.red())
-                await channel.send(embed=embed)
-            except:
+                # Short friendly embed for quick human scanning
+                short_desc = msg or f"An unexpected error occurred: {err_name}"
+                short_embed = discord.Embed(
+                    title=f"Error: /{interaction.command.name if interaction.command else 'unknown'}",
+                    color=discord.Color.orange()
+                )
+                short_embed.add_field(name="User", value=f"{interaction.user} ({interaction.user.id})", inline=True)
+                short_embed.add_field(name="Guild", value=f"{interaction.guild.name if interaction.guild else interaction.guild_id}", inline=True)
+                short_embed.add_field(name="Error", value=err_name, inline=True)
+                short_embed.add_field(name="Message", value=(short_desc[:600] + "...") if len(short_desc) > 600 else short_desc, inline=False)
+                await channel.send(embed=short_embed)
+
+                # Full traceback embed for developers (trim to last 4000 chars)
+                tb = err_str
+                if len(tb) > 4000:
+                    tb = tb[-4000:]
+                tb_embed = discord.Embed(title=f"Traceback: /{interaction.command.name if interaction.command else 'unknown'}", description=f"```py\n{tb}\n```", color=discord.Color.red())
+                await channel.send(embed=tb_embed)
+            except Exception:
                 pass
 
     async def on_error(self, event_method, *args, **kwargs):
