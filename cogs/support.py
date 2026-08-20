@@ -4,16 +4,29 @@ from discord import app_commands
 import io
 import asyncio
 import datetime
+import logging
 import os
 from database import SessionLocal, GuildConfig, Ticket
+from utils.db_executor import run_db, run_db_profiled
+from utils.diag import instrument_async
 from dotenv import load_dotenv
-import google.generativeai as genai
+try:
+    from google import genai as modern_genai
+except ImportError:
+    modern_genai = None
 
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise RuntimeError("GEMINI_API_KEY is missing. Add it to the project's .env file.")
-genai.configure(api_key=GEMINI_API_KEY)
+if GEMINI_API_KEY and modern_genai is not None:
+    GENAI_CLIENT = modern_genai.Client(api_key=GEMINI_API_KEY)
+else:
+    GENAI_CLIENT = None
+
+
+async def generate_gemini_content(model: str, prompt: str):
+    if GENAI_CLIENT is not None:
+        return await GENAI_CLIENT.aio.models.generate_content(model=model, contents=prompt)
+    raise RuntimeError("Gemini is unavailable: install google-genai and configure GEMINI_API_KEY.")
 
 class TicketSupportView(discord.ui.View):
     def __init__(self):
@@ -50,6 +63,10 @@ class SupportCog(commands.Cog):
 
     @tasks.loop(minutes=30)
     async def auto_delete_tickets(self):
+        # Run DB work in a thread to avoid blocking the event loop
+        await run_db(self._auto_delete_tickets_worker)
+
+    def _auto_delete_tickets_worker(self):
         db = SessionLocal()
         try:
             threshold = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))) - datetime.timedelta(hours=12)
@@ -60,14 +77,16 @@ class SupportCog(commands.Cog):
                     channel = guild.get_channel(int(ticket.channel_id))
                     if channel:
                         try:
-                            await channel.delete(reason="Auto-deleted 12 hours after closing")
-                        except discord.NotFound:
-                            pass
-                        except discord.Forbidden:
-                            pass
+                            # Do not discard the ticket row until Discord confirms deletion.
+                            future = asyncio.run_coroutine_threadsafe(
+                                channel.delete(reason="Auto-deleted 12 hours after closing"), self.bot.loop
+                            )
+                            future.result(timeout=30)
+                        except Exception:
+                            continue
                 db.delete(ticket)
             db.commit()
-        except:
+        except Exception:
             pass
         finally:
             db.close()
@@ -91,14 +110,17 @@ class SupportCog(commands.Cog):
         finally:
             db.close()
 
-    def _is_support_enabled(self, guild_id):
-        config = self._get_support_config(guild_id)
+    async def _get_support_config_async(self, guild_id):
+        return await run_db(self._get_support_config, guild_id)
+
+    async def _is_support_enabled(self, guild_id):
+        config = await self._get_support_config_async(guild_id)
         return bool(config and config.support_enabled and config.support_category)
 
-    def _is_in_support_category(self, channel, guild_id):
+    async def _is_in_support_category(self, channel, guild_id):
         if not channel or not guild_id or not getattr(channel, "guild", None):
             return False
-        config = self._get_support_config(guild_id)
+        config = await self._get_support_config_async(guild_id)
         if not config or not config.support_enabled or not config.support_category:
             return False
         try:
@@ -106,11 +128,11 @@ class SupportCog(commands.Cog):
         except (TypeError, ValueError):
             return False
 
-    def _can_use_support_commands(self, interaction):
-        config = self._get_support_config(interaction.guild_id)
+    async def _can_use_support_commands(self, interaction):
+        config = await self._get_support_config_async(interaction.guild_id)
         if not config or not config.support_enabled or not config.support_category:
             return False
-        if not self._is_in_support_category(interaction.channel, interaction.guild_id):
+        if not await self._is_in_support_category(interaction.channel, interaction.guild_id):
             return False
         return True
 
@@ -169,20 +191,28 @@ class SupportCog(commands.Cog):
                 pass
 
     @commands.Cog.listener()
+    @instrument_async(threshold=0.2)
     async def on_message(self, message: discord.Message):
+        handler_started = time.perf_counter()
         if message.author.bot or not message.guild:
             return
+
+        if GENAI_CLIENT is None:
+            return
             
-        config = self._get_support_config(message.guild.id)
+        config = await run_db_profiled("support.message.config", self._get_support_config, message.guild.id)
         if not config or not config.support_enabled or not config.support_category:
             return
 
-        if not self._is_in_support_category(message.channel, message.guild.id):
+        try:
+            in_support_category = message.channel.category_id == int(config.support_category)
+        except (TypeError, ValueError):
+            in_support_category = False
+        if not in_support_category:
             return
 
         if message.channel.name.startswith("ticket-"):
-            import asyncio
-            is_open = await asyncio.to_thread(self._is_ticket_open, message.channel.id)
+            is_open = await run_db_profiled("support.message.ticket", self._is_ticket_open, message.channel.id)
             if not is_open:
                 return
                 
@@ -191,6 +221,7 @@ class SupportCog(commands.Cog):
 
             async with message.channel.typing():
                 try:
+                    gemini_elapsed = 0.0
                     history_key = message.channel.id
                     if history_key not in self.chat_sessions:
                         self.chat_sessions[history_key] = []
@@ -199,14 +230,16 @@ class SupportCog(commands.Cog):
                     context_str = "\n".join(self.chat_sessions[history_key][-10:])
                     prompt = f"{context_str}\n\nYou are a helpful IT/Community Support AI for this Discord server. Provide a concise, helpful response based on the conversation history."
                     try:
-                        model = genai.GenerativeModel("gemini-2.5-flash")
-                        response = model.generate_content(prompt)
+                        gemini_started = time.perf_counter()
+                        response = await generate_gemini_content("gemini-2.5-flash", prompt)
+                        gemini_elapsed = time.perf_counter() - gemini_started
                         ai_answer = getattr(response, "text", str(response))
                     except Exception as e:
                         print(f"Primary model failed ({e}), falling back to lite...")
                         try:
-                            model = genai.GenerativeModel("gemini-2.5-flash-lite")
-                            response = model.generate_content(prompt)
+                            gemini_started = time.perf_counter()
+                            response = await generate_gemini_content("gemini-2.5-flash-lite", prompt)
+                            gemini_elapsed = time.perf_counter() - gemini_started
                             ai_answer = getattr(response, "text", str(response))
                         except Exception as fallback_error:
                             ai_answer = f"I'm sorry, I couldn't generate an AI response at the moment. Error: {str(fallback_error)}"
@@ -215,7 +248,16 @@ class SupportCog(commands.Cog):
                     ai_answer = f"I'm sorry, I couldn't generate an AI response at the moment. Error: {str(e)}"
 
             embed = discord.Embed(title="AI Assistant", description=ai_answer, color=discord.Color.blue())
+            send_started = time.perf_counter()
             await message.channel.send(embed=embed, view=TicketSupportView())
+            send_elapsed = time.perf_counter() - send_started
+            total_elapsed = time.perf_counter() - handler_started
+            if total_elapsed >= 0.2:
+                logging.warning(
+                    "Support message timing: total=%.3fs gemini=%.3fs discord_send=%.3fs local=%.3fs",
+                    total_elapsed, gemini_elapsed, send_elapsed,
+                    total_elapsed - gemini_elapsed - send_elapsed,
+                )
 
     # --- USER COMMANDS ---
     @app_commands.command(name="ticket", description="Open a support ticket")
@@ -235,7 +277,7 @@ class SupportCog(commands.Cog):
                 return
 
             category = interaction.guild.get_channel(int(cat_id))
-            if not self._can_use_support_commands(interaction):
+            if not await self._can_use_support_commands(interaction):
                 await interaction.followup.send(" Support commands must be used inside the configured support category.")
                 return
 
@@ -291,6 +333,18 @@ class SupportCog(commands.Cog):
 
         if is_bad:
             await interaction.response.send_message("Your question was not posted because it contains blocked or harmful language.", ephemeral=True)
+            # Log blocked /question attempts to bot-log channel for auditing
+            try:
+                log_ch = await self.bot._get_configured_log_channel(interaction.guild_id)
+                if log_ch:
+                    truncated = (text[:800] + "...") if len(text) > 800 else text
+                    embed = discord.Embed(title="Blocked /question attempt", color=discord.Color.orange())
+                    embed.add_field(name="User", value=f"{interaction.user} ({interaction.user.id})", inline=True)
+                    embed.add_field(name="Channel", value=f"#{interaction.channel.name} ({interaction.channel.id})", inline=True)
+                    embed.add_field(name="Content", value=truncated, inline=False)
+                    await log_ch.send(embed=embed)
+            except Exception:
+                pass
             return
 
         embed = discord.Embed(
@@ -319,7 +373,7 @@ class SupportCog(commands.Cog):
         if not config or not config.support_enabled or not config.support_category:
             await interaction.followup.send(" Support is disabled or not configured.")
             return
-        if not self._is_in_support_category(interaction.channel, interaction.guild_id):
+        if not await self._is_in_support_category(interaction.channel, interaction.guild_id):
             await interaction.followup.send(" Must be used in the configured support category.")
             return
         if not interaction.channel.name.startswith("ticket-"):
@@ -337,7 +391,7 @@ class SupportCog(commands.Cog):
         if not config or not config.support_enabled or not config.support_category:
             await interaction.followup.send(" Support is disabled or not configured.")
             return
-        if not self._is_in_support_category(interaction.channel, interaction.guild_id):
+        if not await self._is_in_support_category(interaction.channel, interaction.guild_id):
             await interaction.followup.send(" Must be used in the configured support category.")
             return
         if not interaction.channel.name.startswith("ticket-"):
@@ -354,7 +408,7 @@ class SupportCog(commands.Cog):
         if not config or not config.support_enabled or not config.support_category:
             await interaction.followup.send(" Support is disabled or not configured.", ephemeral=True)
             return
-        if not self._can_use_support_commands(interaction):
+        if not await self._can_use_support_commands(interaction):
             await interaction.followup.send(" Must be used in a support ticket channel.", ephemeral=True)
             return
         if not interaction.channel.name.startswith("ticket-"):
@@ -405,7 +459,7 @@ class SupportCog(commands.Cog):
         if not config or not config.support_enabled or not config.support_category:
             await interaction.followup.send(" Support is disabled or not configured.", ephemeral=True)
             return
-        if not self._can_use_support_commands(interaction):
+        if not await self._can_use_support_commands(interaction):
             await interaction.followup.send(" Must be used in a support ticket channel.", ephemeral=True)
             return
         if not interaction.channel.name.startswith("closed-"):
@@ -439,7 +493,7 @@ class SupportCog(commands.Cog):
         if not config or not config.support_enabled or not config.support_category:
             await interaction.response.send_message(" Support is disabled or not configured.", ephemeral=True)
             return
-        if not self._can_use_support_commands(interaction):
+        if not await self._can_use_support_commands(interaction):
             await interaction.response.send_message(" Must be used in a support ticket channel.", ephemeral=True)
             return
         if not ("ticket-" in interaction.channel.name or "closed-" in interaction.channel.name):
@@ -464,7 +518,7 @@ class SupportCog(commands.Cog):
         if not config or not config.support_enabled or not config.support_category:
             await interaction.followup.send(" Support is disabled or not configured.")
             return
-        if not self._can_use_support_commands(interaction):
+        if not await self._can_use_support_commands(interaction):
             await interaction.followup.send(" Must be used in the configured support category.")
             return
         db = SessionLocal()

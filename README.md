@@ -231,3 +231,109 @@ You can compile the project to catch syntax issues:
 ```bash
 python -m py_compile bot.py database.py cogs/*.py utils/*.py scripts/*.py
 ```
+
+## Commands (Full Reference)
+
+This section lists the bot's slash commands, what they do, and how to enable/disable or test related features.
+
+- **Admin / Utility**
+   - `/message channel:<text channel> content:<string>` — Admin-only. Send an arbitrary message to the specified channel. Useful for announcements or manual bot content posting.
+
+- **Attendance (cogs/attendance.py)**
+   - `/stats` — Shows overall attendance statistics for today (requires attendance enabled and run in the configured attendance channel).
+   - `/export [month] [day] [user]` — Admin: Export attendance CSV for a month/day/user.
+   - `/today` — Shows today's attendance list (requires attendance enabled and run in attendance channel).
+   - `/user [member]` — Shows an individual member's attendance history and last 7 days.
+   - `/month [YYYY-MM]` — Shows a monthly attendance summary.
+   - `/activity` — Admin-only: view in-memory activity (message authors seen since restart) and current voice participants.
+
+- **Custom Leaderboards & Admin (cogs/custom_lb.py)**
+   - `/set_leaderboard role:<role>` — Admin: set (or clear) the single role that qualifies for the main leaderboard.
+   - `/enable option:<choice> channel:<channel>` — Admin: enables a listed feature (Bot Logs, CVE and News, Support, Attendance, Welcome, Leaderboard, Level-up announcements). Each option validates channel type (text vs category) and stores configuration in the DB.
+   - `/disable option:<choice>` — Admin: disables the named feature and clears its saved channel setting.
+   - `/enable_hall_of_fame role_name announcement_channel warning_channel` — Admin: enable and configure Hall of Fame.
+   - `/test option:<choice>` — Admin: sends a test message to verify a configured feature/channel (Bot Logs, CVE and News, Leaderboard, Level-up announcements).
+   - `/add_custom_leaderboard channel name [role]` — Admin: create a custom leaderboard for a channel (optional role filter).
+   - `/remove_custom_leaderboard channel` — Admin: remove a custom leaderboard.
+   - `/hall_of_fame ...` and `/hall_of_fame_overall` — Admin: produce and post Hall of Fame imagery and announcements.
+
+- **Leveling (cogs/leveling.py)**
+   - `/rank [member]` — Show rank, level, XP and position for the user or specified member.
+   - `/leaderboard` — Show top XP earners (main or custom leaderboard depending on channel configuration).
+   - `/rankcard [member]` — Generate a graphical rank card for a member.
+
+- **Support / Tickets (cogs/support.py)**
+   - `/ticket [reason]` — Open a support ticket (creates a channel under the configured support category).
+   - `/question text:<string>` — Post a moderated question embed in the current channel (bot moderates content using the forbidden words list).
+   - `/adduser member` — Admin: add a user to a ticket channel.
+   - `/removeuser member` — Admin: remove a user from a ticket channel.
+   - `/close` — Close the current ticket (marks closed and schedules deletion/cleanup).
+   - `/reopen` — Admin: reopen a closed ticket.
+   - `/transcript` — Admin: export the last ~500 messages of a ticket as a text transcript.
+   - `/closeall` — Admin: close all open tickets in the guild.
+
+- **Support for News (cogs/news.py)**
+   - News posting runs automatically when the guild config option **CVE and News** is enabled (see `/enable` with the `CVE and News` option).
+   - Feeds: The bot posts from *The Hacker News* and *Latest CVEs*. Bleeping Computer was removed per project policy.
+   - To enable news for your server: use `/enable` → choose `CVE and News` and select a text channel to receive posts.
+
+## How to enable / disable features
+
+The bot stores server-level settings in a `guild_config` table backed by the `GuildConfig` model (see `database.py`). You should normally use the provided slash commands to configure features:
+
+- `/enable option:<choice> channel:<channel>` — sets and enables a feature and stores the channel/category in `guild_config`.
+- `/disable option:<choice>` — clears the feature setting from `guild_config` and disables it.
+
+Examples (preferred): use the above slash commands as an administrator in your server.
+
+Direct DB method (advanced / troubleshooting)
+
+If you must troubleshoot directly in the DB, the relevant columns in `guild_config` include:
+
+- `leveling_enabled`, `leveling_channel`, `attendance_enabled`, `attendance_channel`,
+- `support_enabled`, `support_category`,
+- `cve_and_news_enabled`, `cve_and_news_channel`,
+- `bot_logs_enabled`, `bot_logs_channel`,
+- `leaderboard_enabled`, `leaderboard_channel`, `main_leaderboard_role_ids`,
+- `level_up_announcements_enabled`, `level_up_announcements_channel`,
+- `hall_of_fame_*` columns for Hall of Fame configuration.
+
+SQL example to enable CVE/news (replace values):
+
+```sql
+UPDATE guild_config
+SET cve_and_news_enabled = 1, cve_and_news_channel = '123456789012345678'
+WHERE guild_id = '987654321098765432';
+```
+
+If a row does not exist for your guild, create it first:
+
+```sql
+INSERT INTO guild_config (guild_id, cve_and_news_enabled, cve_and_news_channel)
+VALUES ('987654321098765432', 1, '123456789012345678');
+```
+
+## Moderation: forbidden words
+
+- The bot loads a forbidden-words list from `assets/words.json` and compiles a whole-word regex at startup to avoid substring false positives.
+- To update blocked words, edit `assets/words.json` and restart the bot. Be careful: that file is a simple JSON array of lowercase tokens.
+
+## Troubleshooting & common admin tasks
+
+- Restart the bot service:
+
+```bash
+sudo systemctl restart rynexbot
+sudo journalctl -u rynexbot -f
+```
+
+- If news or other background tasks appear to block the event loop, confirm the service was restarted after recent updates (feeds are fetched with `asyncio.to_thread` and writes are buffered).
+- Use `/test` (Admin) to validate that your configured channels are correct for bot logs, news, leaderboards, and level-up announcements.
+
+## Developer notes
+
+- Blocking calls (feed parsing, heavy DB commits, history scans) have been moved off the main event loop via `asyncio.to_thread`.
+- Feed entries are buffered and periodically flushed to the DB to reduce write load.
+- Attendance is recorded on messages and voice joins only (presence alone does not mark attendance).
+
+If you'd like, I can also add a short `README_ADMIN.md` for operation/runbook style steps (service file, restart, and common diagnostics). Let me know.

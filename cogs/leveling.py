@@ -3,8 +3,11 @@ from discord.ext import commands, tasks
 from discord import app_commands
 import asyncio
 import time
+import logging
 import datetime
 from database import SessionLocal, GuildConfig, UserData, CustomLeaderboard, AttendanceLog
+from utils.db_executor import run_db, run_db_profiled
+from utils.diag import instrument_async
 import sys
 import os
 from utils.leaderboard import (
@@ -14,6 +17,14 @@ from utils.leaderboard import (
     should_include_member_for_custom_leaderboard,
     should_include_member_for_main_leaderboard,
 )
+
+# Thread-safe DB helper for background loops
+def _fetch_guild_config(guild_id):
+    db = SessionLocal()
+    try:
+        return db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
+    finally:
+        db.close()
 
 DEFAULT_LEVELING_CHANNEL_ID = 1519264254178623488
 DAILY_TEXT_XP_CAP = 100
@@ -71,14 +82,20 @@ class LevelingCog(commands.Cog):
     def _process_message_xp(self, guild_id: int, author_id: int, message_content: str):
         db = SessionLocal()
         try:
-            config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
+            # Fetch the guild settings and this user's row in one round trip.
+            config, user = db.query(GuildConfig, UserData).outerjoin(
+                UserData, UserData.user_id == int(author_id)
+            ).filter(GuildConfig.guild_id == str(guild_id)).first() or (None, None)
             if not config or not config.leveling_enabled:
                 return False, 0, 0, None
             
             if len(message_content) < config.min_message_length:
                 return False, 0, 0, None
 
-            user = self.get_user(db, author_id)
+            user_was_created = user is None
+            if user_was_created:
+                user = UserData(user_id=int(author_id))
+                db.add(user)
             
             today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))).strftime('%Y-%m-%d')
             if not user.daily_xp_date or str(user.daily_xp_date) != today:
@@ -107,24 +124,31 @@ class LevelingCog(commands.Cog):
                 
                 db.commit()
                 return level_up, new_level, user.xp, config.leveling_channel
+            if user_was_created:
+                # Preserve the existing behavior: a valid new user row is created
+                # even when no XP can be awarded because a daily cap is already met.
+                db.commit()
             return False, 0, 0, None
         finally:
             db.close()
 
     @commands.Cog.listener()
+    @instrument_async(threshold=0.2)
     async def on_message(self, message: discord.Message):
         if message.author.bot or not message.guild:
             return
         
-        import asyncio
-        level_up, new_level, current_xp, leveling_channel = await asyncio.to_thread(
+        started = time.perf_counter()
+        level_up, new_level, current_xp, leveling_channel = await run_db_profiled(
+            "leveling.message",
             self._process_message_xp, message.guild.id, message.author.id, message.content
         )
+        db_elapsed = time.perf_counter() - started
         
         if level_up:
-            db = SessionLocal()
+            # Fetch config using run_db to avoid blocking the main loop
             try:
-                config = db.query(GuildConfig).filter_by(guild_id=str(message.guild.id)).first()
+                config = await run_db(_fetch_guild_config, message.guild.id)
                 if not config or not getattr(config, "level_up_announcements_enabled", False):
                     return
 
@@ -132,8 +156,15 @@ class LevelingCog(commands.Cog):
                 ch = message.guild.get_channel(int(target_channel_id))
                 if ch:
                     await self.send_level_up_announcement(message.author, new_level, current_xp, ch)
-            finally:
-                db.close()
+            except Exception:
+                return
+
+        total_elapsed = time.perf_counter() - started
+        if total_elapsed >= 0.5:
+            logging.warning(
+                "Leveling message timing: total=%.3fs db_executor=%.3fs level_up=%s announcement=%.3fs",
+                total_elapsed, db_elapsed, level_up, total_elapsed - db_elapsed,
+            )
 
     @app_commands.command(name="rank", description="Check your rank")
     async def rank(self, interaction: discord.Interaction, member: discord.User = None):
@@ -306,7 +337,7 @@ class LevelingCog(commands.Cog):
                 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "utils"))
                 from rankcard import generate_rank_card # type: ignore
                 
-                level, xp, rank_pos, daily_xp, daily_limit, _ = await asyncio.to_thread(self._get_card_data, interaction.guild_id, target.id)
+                level, xp, rank_pos, daily_xp, daily_limit, _ = await run_db(self._get_card_data, interaction.guild_id, target.id)
                 file = await generate_rank_card(
                     target, level, xp, rank_pos, daily_xp, daily_limit, 100,
                     profile_title=interaction.guild.name if interaction.guild else "Community Profile",
@@ -377,18 +408,16 @@ class LevelingCog(commands.Cog):
 
     @tasks.loop(minutes=1)
     async def voice_xp_loop(self):
+        import asyncio
         voice_users = []
         for guild in self.bot.guilds:
-            config_db = SessionLocal()
             try:
-                config = config_db.query(GuildConfig).filter_by(guild_id=str(guild.id)).first()
+                config = await run_db(_fetch_guild_config, guild.id)
                 if not config or not config.leveling_enabled:
                     continue
             except Exception as e:
                 print(f"Error fetching config: {e}")
                 continue
-            finally:
-                config_db.close()
 
             for vc in guild.voice_channels:
                 # Require at least 2 non-bot members to prevent AFK farming
@@ -399,23 +428,22 @@ class LevelingCog(commands.Cog):
                         
         if voice_users:
             import asyncio
-            level_ups = await asyncio.to_thread(self._batch_add_voice_xp, voice_users)
+            level_ups = await run_db(self._batch_add_voice_xp, voice_users)
             for guild_id, user_id, new_level, current_xp, ch_id in level_ups:
                 guild = self.bot.get_guild(guild_id)
                 if guild:
                     member = guild.get_member(user_id)
                     if member:
-                        config_db = SessionLocal()
                         try:
-                            config = config_db.query(GuildConfig).filter_by(guild_id=str(guild.id)).first()
+                            config = await run_db(_fetch_guild_config, guild.id)
                             if not config or not getattr(config, "level_up_announcements_enabled", False):
                                 continue
                             target_ch_id = getattr(config, "level_up_announcements_channel", None) or ch_id or str(DEFAULT_LEVELING_CHANNEL_ID)
                             ch = guild.get_channel(int(target_ch_id))
                             if ch:
                                 await self.send_level_up_announcement(member, new_level, current_xp, ch)
-                        finally:
-                            config_db.close()
+                        except Exception:
+                            pass
 
     @voice_xp_loop.before_loop
     async def before_voice_xp(self):

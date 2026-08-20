@@ -2,10 +2,15 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import datetime
+import logging
+import time
 from collections import defaultdict
+import asyncio
 import io
 import csv
 from database import SessionLocal, GuildConfig, UserData, AttendanceLog, HallOfFameEntry
+from utils.db_executor import run_db, run_db_profiled
+from utils.diag import instrument_async
 
 class AttendanceCog(commands.Cog):
     def __init__(self, bot):
@@ -19,6 +24,10 @@ class AttendanceCog(commands.Cog):
 
     @tasks.loop(time=datetime.time(hour=12, minute=0, tzinfo=datetime.timezone(datetime.timedelta(hours=5))))
     async def daily_cleanup(self):
+        # Run cleanup in a thread to avoid blocking the event loop
+        await run_db(self._daily_cleanup_worker)
+
+    def _daily_cleanup_worker(self):
         # Clear today's in-memory message activity at the start of the daily cleanup
         try:
             self._message_activity.clear()
@@ -95,12 +104,17 @@ class AttendanceCog(commands.Cog):
     def _mark_message_attendance(self, guild_id: int, author_id: int):
         db = SessionLocal()
         try:
-            config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
+            today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))).strftime('%Y-%m-%d')
+            # The prior implementation did two sequential remote SELECTs. This
+            # outer join preserves the result while making a normal message one query.
+            config, log = db.query(GuildConfig, AttendanceLog).outerjoin(
+                AttendanceLog,
+                (AttendanceLog.guild_id == str(guild_id)) &
+                (AttendanceLog.user_id == str(author_id)) &
+                (AttendanceLog.date == today),
+            ).filter(GuildConfig.guild_id == str(guild_id)).first() or (None, None)
             if not config or not config.attendance_enabled:
                 return
-            
-            today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))).strftime('%Y-%m-%d')
-            log = db.query(AttendanceLog).filter_by(guild_id=str(guild_id), user_id=str(author_id), date=today).first()
             if not log:
                 new_log = AttendanceLog(guild_id=str(guild_id), user_id=str(author_id), date=today)
                 db.add(new_log)
@@ -109,6 +123,7 @@ class AttendanceCog(commands.Cog):
             db.close()
 
     @commands.Cog.listener()
+    @instrument_async(threshold=0.2)
     async def on_message(self, message: discord.Message):
         if message.author.bot or not message.guild:
             return
@@ -118,8 +133,11 @@ class AttendanceCog(commands.Cog):
         except Exception:
             pass
 
-        import asyncio
-        await asyncio.to_thread(self._mark_message_attendance, message.guild.id, message.author.id)
+        started = time.perf_counter()
+        await run_db_profiled("attendance.message", self._mark_message_attendance, message.guild.id, message.author.id)
+        elapsed = time.perf_counter() - started
+        if elapsed >= 0.5:
+            logging.warning("Attendance message DB timing: db_executor=%.3fs", elapsed)
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
@@ -134,8 +152,7 @@ class AttendanceCog(commands.Cog):
 
         # If they joined a voice channel (before was None and after is not None), mark attendance
         if before.channel is None and after.channel is not None:
-            import asyncio
-            await asyncio.to_thread(self._mark_presence_attendance, member.guild.id, member.id)
+            await run_db(self._mark_presence_attendance, member.guild.id, member.id)
 
 
     @app_commands.command(name="stats", description="Shows overall attendance statistics")
@@ -416,13 +433,10 @@ class AttendanceCog(commands.Cog):
             return
         self._initial_scan_done = True
         await self.bot.wait_until_ready()
-        import asyncio
         for guild in self.bot.guilds:
-            db = SessionLocal()
-            try:
-                config = db.query(GuildConfig).filter_by(guild_id=str(guild.id)).first()
-            finally:
-                db.close()
+            # Startup scan runs alongside the News loop.  This configuration
+            # lookup must remain off Discord's event-loop thread.
+            config = await run_db(self._get_guild_config, guild.id)
             if not config or not config.attendance_enabled:
                 continue
 
@@ -445,7 +459,7 @@ class AttendanceCog(commands.Cog):
                         # Only consider messages from today
                         if msg_date != today_str:
                             continue
-                        await asyncio.to_thread(self._mark_message_attendance, guild.id, msg.author.id)
+                        await run_db(self._mark_message_attendance, guild.id, msg.author.id)
                         marked.add(msg.author.id)
                 except Exception:
                     continue
@@ -457,7 +471,7 @@ class AttendanceCog(commands.Cog):
                     for m in vc.members:
                         if m.bot:
                             continue
-                        await asyncio.to_thread(self._mark_presence_attendance, guild.id, m.id)
+                        await run_db(self._mark_presence_attendance, guild.id, m.id)
                         marked.add(m.id)
             except Exception:
                 pass
@@ -469,6 +483,13 @@ class AttendanceCog(commands.Cog):
                     self._message_activity[gid].add(uid)
             except Exception:
                 pass
+
+    def _get_guild_config(self, guild_id: int):
+        db = SessionLocal()
+        try:
+            return db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
+        finally:
+            db.close()
 
 async def setup(bot):
     await bot.add_cog(AttendanceCog(bot))

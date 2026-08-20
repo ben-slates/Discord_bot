@@ -2,7 +2,9 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import datetime
+import asyncio
 from database import SessionLocal, GuildConfig, UserData, AttendanceLog, CustomLeaderboard
+from utils.db_executor import run_db
 from utils.leaderboard import (
     get_channel_members,
     get_leaderboard_channel_id,
@@ -23,11 +25,9 @@ class NotificationsCog(commands.Cog):
     async def daily_summary(self):
         now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5)))
         current_time_str = now.strftime("%H:%M")
-        
-        db = SessionLocal()
-        try:
-            configs = db.query(GuildConfig).all()
-            for config in configs:
+        # Load configs in a thread to avoid blocking the event loop
+        configs = await run_db(_fetch_all_configs)
+        for config in configs:
                 guild = self.bot.get_guild(int(config.guild_id))
                 if not guild:
                     continue
@@ -51,10 +51,12 @@ class NotificationsCog(commands.Cog):
                             print(f"Failed to delete old leaderboard: {delete_err}")
 
                         embed = discord.Embed(title="Morning Leaderboard Update", description="Top 10 users by total XP.", color=discord.Color.gold())
-                        allowed_role_ids = get_main_leaderboard_role_ids(db, config.guild_id)
+                        allowed_role_ids = await run_db(_get_main_lb_role_ids, config.guild_id)
                         top_users = []
-                        for user in db.query(UserData).order_by(UserData.xp.desc()).all():
-                            member = guild.get_member(user.user_id)
+                        # Fetch top users from DB in thread
+                        user_rows = await run_db(_fetch_top_users, 1000)
+                        for user in user_rows:
+                            member = guild.get_member(int(user['user_id']))
                             if not member or member.bot:
                                 continue
                             if not should_include_member_for_main_leaderboard(member, allowed_role_ids):
@@ -89,7 +91,7 @@ class NotificationsCog(commands.Cog):
                         embed = discord.Embed(title=f"🌙 Nightly Attendance Log - {today}", color=discord.Color.purple())
                         
                         total_members = sum(1 for m in guild.members if not m.bot)
-                        total_today = db.query(AttendanceLog).filter_by(guild_id=config.guild_id, date=today).count()
+                        total_today = await run_db(_count_attendance, config.guild_id, today)
                         absent = max(0, total_members - total_today)
                         rate = round((total_today / total_members * 100), 1) if total_members > 0 else 0.0
                         
@@ -107,7 +109,7 @@ class NotificationsCog(commands.Cog):
                 
                 # Custom Leaderboards at 08:00
                 if current_time_str == "08:00":
-                    custom_lbs = db.query(CustomLeaderboard).filter_by(guild_id=str(config.guild_id)).all()
+                    custom_lbs = await run_db(_fetch_custom_lbs, config.guild_id)
                     for lb in custom_lbs:
                         channel = guild.get_channel(int(lb.channel_id))
                         if not channel: continue
@@ -123,15 +125,15 @@ class NotificationsCog(commands.Cog):
                             print(f"Failed to delete old custom leaderboard in {lb.channel_id}: {delete_err}")
                         
                         scores = []
-                        all_users = db.query(UserData).all()
-                        user_map = {u.user_id: u for u in all_users}
-                        
-                        att_logs = db.query(AttendanceLog).filter_by(guild_id=str(config.guild_id)).all()
+                        all_users = await run_db(_fetch_all_users, config.guild_id)
+                        user_map = {int(u['user_id']): u for u in all_users}
+
+                        att_logs = await run_db(_fetch_att_logs, config.guild_id)
                         att_map = {}
                         for log in att_logs:
-                            uid = int(log.user_id)
+                            uid = int(log['user_id'])
                             att_map[uid] = att_map.get(uid, 0) + 1
-                            
+
                         members = await get_channel_members(channel)
                         for member in members:
                             if member.bot:
@@ -163,8 +165,7 @@ class NotificationsCog(commands.Cog):
                             await channel.send(embed=embed)
                         except discord.Forbidden:
                             pass
-        finally:
-            db.close()
+        # end of configs loop
 
     @daily_summary.before_loop
     async def before_daily_summary(self):
@@ -172,3 +173,57 @@ class NotificationsCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(NotificationsCog(bot))
+
+
+# Thread helpers
+def _fetch_all_configs():
+    db = SessionLocal()
+    try:
+        return db.query(GuildConfig).all()
+    finally:
+        db.close()
+
+def _fetch_top_users(limit=1000):
+    db = SessionLocal()
+    try:
+        rows = db.query(UserData).order_by(UserData.xp.desc()).limit(limit).all()
+        return [{'user_id': r.user_id, 'xp': r.xp, 'level': r.level} for r in rows]
+    finally:
+        db.close()
+
+def _count_attendance(guild_id, date_str):
+    db = SessionLocal()
+    try:
+        return db.query(AttendanceLog).filter_by(guild_id=str(guild_id), date=date_str).count()
+    finally:
+        db.close()
+
+def _fetch_custom_lbs(guild_id):
+    db = SessionLocal()
+    try:
+        return db.query(CustomLeaderboard).filter_by(guild_id=str(guild_id)).all()
+    finally:
+        db.close()
+
+def _fetch_all_users(guild_id):
+    db = SessionLocal()
+    try:
+        rows = db.query(UserData).all()
+        return [{'user_id': r.user_id, 'xp': r.xp, 'level': r.level} for r in rows]
+    finally:
+        db.close()
+
+def _fetch_att_logs(guild_id):
+    db = SessionLocal()
+    try:
+        rows = db.query(AttendanceLog).filter_by(guild_id=str(guild_id)).all()
+        return [{'user_id': r.user_id, 'date': r.date} for r in rows]
+    finally:
+        db.close()
+
+def _get_main_lb_role_ids(guild_id):
+    db = SessionLocal()
+    try:
+        return get_main_leaderboard_role_ids(db, guild_id)
+    finally:
+        db.close()

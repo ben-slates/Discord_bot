@@ -3,12 +3,15 @@ import os
 from pathlib import Path
 import re
 import asyncio
+import logging
 
 import discord
 from discord.ext import commands
 from discord import app_commands
 from dotenv import load_dotenv
 from database import SessionLocal, GuildConfig
+from utils.db_executor import run_db
+from utils.db_executor import shutdown as shutdown_db_executor
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -59,6 +62,8 @@ class RynexBot(commands.Bot):
         # expose the forbidden-word patterns to cogs via the bot instance
         self.FORBIDDEN_RE = FORBIDDEN_RE if 'FORBIDDEN_RE' in globals() else None
         self.FORBIDDEN_WORDS = FORBIDDEN_WORDS if 'FORBIDDEN_WORDS' in globals() else set()
+        self._watchdog_task: asyncio.Task | None = None
+        self._block_sampler = None
 
     async def setup_hook(self):
         for filename in os.listdir('./cogs'):
@@ -81,6 +86,94 @@ class RynexBot(commands.Bot):
         else:
             # await self.tree.sync()
             print("Synced globally (skipped due to dev rate limit)")
+
+        # Start event-loop watchdog to detect blocking operations
+        try:
+            from utils.diag import EventLoopBlockSampler
+            self._block_sampler = EventLoopBlockSampler(threshold=2.0)
+            self._block_sampler.start()
+            self._watchdog_task = asyncio.create_task(self._watch_event_loop(), name="event-loop-watchdog")
+        except Exception:
+            logging.exception("Unable to start event-loop watchdog")
+
+    async def close(self):
+        if self._block_sampler:
+            self._block_sampler.stop()
+        if self._watchdog_task:
+            self._watchdog_task.cancel()
+            try:
+                await self._watchdog_task
+            except asyncio.CancelledError:
+                pass
+        await super().close()
+        shutdown_db_executor()
+
+    async def _watch_event_loop(self):
+        # Simple watchdog that detects when the event loop is blocked for >2s
+        from utils.diag import identify_block_source
+        loop = asyncio.get_running_loop()
+        last = loop.time()
+        # Rate-limit heavy diagnostics so the watcher doesn't itself cause load.
+        last_diag = 0.0
+        MIN_DIAG_INTERVAL = 60.0  # seconds between detailed diagnostics
+        while True:
+            await asyncio.sleep(1)
+            if self._block_sampler:
+                self._block_sampler.pulse()
+            now = loop.time()
+            drift = now - last
+            last = now
+            if drift <= 2.0:
+                continue
+
+            logging.warning(f"Event loop blocked for {drift:.1f}s")
+
+            # Throttle detailed capture to avoid heavy work and noisy outputs.
+            if now - last_diag < MIN_DIAG_INTERVAL:
+                # Short summary only
+                try:
+                    task_count = len(asyncio.all_tasks(loop=loop))
+                except Exception:
+                    task_count = -1
+                logging.warning(f"Event loop warning (brief): drift={drift:.1f}s tasks={task_count}")
+                continue
+
+            last_diag = now
+            # Identify likely blocking source: prefer RUNNING asyncio tasks with a stack.
+            try:
+                diag = identify_block_source(loop)
+                if diag and diag.get("type") == "thread":
+                    d = diag["detail"]
+                    summary = (
+                        f"Main thread frame: {d.get('function')}\nFile: {d.get('file')}\nLine: {d.get('lineno')}\nDuration: {drift:.1f}s"
+                    )
+                else:
+                    # Fallback lightweight summary
+                    try:
+                        task_count = len(asyncio.all_tasks(loop=loop))
+                    except Exception:
+                        task_count = -1
+                    summary = (
+                        "Event loop resumed before a blocking frame could be sampled; "
+                        f"pending tasks are not treated as the cause. tasks={task_count}"
+                    )
+
+                try:
+                    logging.warning("Event loop diagnostic:\n" + summary)
+                except Exception:
+                    pass
+
+                try:
+                    channel = await self._get_configured_log_channel(None)
+                    if channel:
+                        try:
+                            await channel.send(f"Warning: event loop blocked for {drift:.1f}s\n{summary}")
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+            except Exception:
+                logging.exception("Failed while running enhanced event-loop diagnostics")
 
     async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         # Friendly handling for common app-command errors while still logging full tracebacks
@@ -191,6 +284,19 @@ class RynexBot(commands.Bot):
                     )
                 except Exception:
                     pass
+                # Log the blocked message to the configured bot-log channel for auditing
+                try:
+                    log_ch = await self._get_configured_log_channel(message.guild.id)
+                    if log_ch:
+                        truncated = (content[:800] + "...") if len(content) > 800 else content
+                        embed = discord.Embed(title="Blocked Message Deleted", color=discord.Color.orange())
+                        embed.add_field(name="User", value=f"{message.author} ({message.author.id})", inline=True)
+                        embed.add_field(name="Channel", value=f"#{message.channel.name} ({message.channel.id})", inline=True)
+                        embed.add_field(name="Guild", value=f"{message.guild.name} ({message.guild.id})", inline=True)
+                        embed.add_field(name="Content", value=truncated, inline=False)
+                        await log_ch.send(embed=embed)
+                except Exception:
+                    pass
                 return
         except Exception:
             # Fall back to token-based matching if regex fails for any reason
@@ -210,17 +316,40 @@ class RynexBot(commands.Bot):
                         )
                     except Exception:
                         pass
+                    # Log the blocked message to the configured bot-log channel for auditing
+                    try:
+                        log_ch = await self._get_configured_log_channel(message.guild.id)
+                        if log_ch:
+                            truncated = (content[:800] + "...") if len(content) > 800 else content
+                            embed = discord.Embed(title="Blocked Message Deleted", color=discord.Color.orange())
+                            embed.add_field(name="User", value=f"{message.author} ({message.author.id})", inline=True)
+                            embed.add_field(name="Channel", value=f"#{message.channel.name} ({message.channel.id})", inline=True)
+                            embed.add_field(name="Guild", value=f"{message.guild.name} ({message.guild.id})", inline=True)
+                            embed.add_field(name="Content", value=truncated, inline=False)
+                            await log_ch.send(embed=embed)
+                    except Exception:
+                        pass
                     return
 
     async def _get_configured_log_channel(self, guild_id):
-        db = SessionLocal()
-        try:
-            config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first() if guild_id is not None else None
-            if config and config.bot_logs_enabled and config.bot_logs_channel:
-                return self.get_channel(int(config.bot_logs_channel))
-            return None
-        finally:
-            db.close()
+        # Run DB access in a thread to avoid blocking the event loop
+        def _db_fetch():
+            db = SessionLocal()
+            try:
+                config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first() if guild_id is not None else None
+                if config and config.bot_logs_enabled and config.bot_logs_channel:
+                    try:
+                        return int(config.bot_logs_channel)
+                    except Exception:
+                        return None
+                return None
+            finally:
+                db.close()
+
+        channel_id = await run_db(_db_fetch)
+        if channel_id:
+            return self.get_channel(int(channel_id))
+        return None
 
 bot = RynexBot()
 
@@ -252,6 +381,19 @@ async def on_ready():
                                 if perms.manage_messages:
                                     try:
                                         await msg.delete()
+                                        # Log the blocked message detected during startup scan
+                                        try:
+                                            log_ch = await bot._get_configured_log_channel(guild.id)
+                                            if log_ch:
+                                                cont = cont if len(cont) <= 800 else (cont[:800] + "...")
+                                                embed = discord.Embed(title="Blocked Message Deleted (startup scan)", color=discord.Color.orange())
+                                                embed.add_field(name="User", value=f"{msg.author} ({msg.author.id})", inline=True)
+                                                embed.add_field(name="Channel", value=f"#{channel.name} ({channel.id})", inline=True)
+                                                embed.add_field(name="Guild", value=f"{guild.name} ({guild.id})", inline=True)
+                                                embed.add_field(name="Content", value=cont, inline=False)
+                                                await log_ch.send(embed=embed)
+                                        except Exception:
+                                            pass
                                         await asyncio.sleep(0.1)
                                     except discord.Forbidden:
                                         pass

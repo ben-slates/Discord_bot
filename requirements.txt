@@ -7,10 +7,11 @@ python-jose[cryptography]
 python-multipart
 psutil
 itsdangerous
-google-generativeai
+google-genai
 discord
 dotenv
 psycopg2-binary
 pillow
 feedparser
 beautifulsoup4
+aiohttp
