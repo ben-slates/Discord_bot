@@ -10,18 +10,22 @@ class AdminCog(commands.Cog):
 
     @app_commands.command(name="message", description="Admin: send a message to a specified channel")
     @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(channel="The text or voice channel chat to send the message to", content="The message to send")
+    @app_commands.describe(channel="The text, voice, or stage-channel chat to send the message to", content="The message to send")
     async def message(
         self,
         interaction: discord.Interaction,
-        channel: discord.TextChannel | discord.VoiceChannel,
+        channel: discord.TextChannel | discord.VoiceChannel | discord.StageChannel,
         content: str = None,
     ):
         # Use a modal to accept multi-line content from admins. If `content`
         # is provided it will be used to pre-fill the modal; the final send
         # happens when the modal is submitted.
         class MessageModal(discord.ui.Modal, title="Send Message"):
-            def __init__(self, target_channel: discord.TextChannel | discord.VoiceChannel, prefill: str | None = None):
+            def __init__(
+                self,
+                target_channel: discord.TextChannel | discord.VoiceChannel | discord.StageChannel,
+                prefill: str | None = None,
+            ):
                 super().__init__()
                 self.target_channel = target_channel
                 self.body = discord.ui.TextInput(label="Message content", style=discord.TextStyle.paragraph, required=True, default=prefill or "")
