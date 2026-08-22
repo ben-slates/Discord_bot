@@ -3,6 +3,8 @@ from discord.ext import commands, tasks
 from discord import app_commands
 import datetime
 import asyncio
+import logging
+from zoneinfo import ZoneInfo
 from database import SessionLocal, GuildConfig, UserData, AttendanceLog, CustomLeaderboard
 from utils.db_executor import run_db
 from utils.leaderboard import (
@@ -13,17 +15,47 @@ from utils.leaderboard import (
     should_include_member_for_main_leaderboard,
 )
 
+PKT = ZoneInfo("Asia/Karachi")
+DAILY_SUMMARY_TIMES = [
+    datetime.time(hour=8, minute=0, tzinfo=PKT),
+    datetime.time(hour=23, minute=50, tzinfo=PKT),
+]
+
+
+def _next_leaderboard_run(now_utc: datetime.datetime | None = None) -> datetime.datetime:
+    """Return the next 08:00 Asia/Karachi run as a timezone-aware UTC time."""
+    now_utc = now_utc or datetime.datetime.now(datetime.timezone.utc)
+    now_pkt = now_utc.astimezone(PKT)
+    next_run = now_pkt.replace(hour=8, minute=0, second=0, microsecond=0)
+    if next_run <= now_pkt:
+        next_run += datetime.timedelta(days=1)
+    return next_run.astimezone(datetime.timezone.utc)
+
+
 class NotificationsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.daily_summary.start()
+        if not self.daily_summary.is_running():
+            self.daily_summary.start()
 
     def cog_unload(self):
         self.daily_summary.cancel()
 
-    @tasks.loop(minutes=1)
+    @tasks.loop(time=DAILY_SUMMARY_TIMES)
     async def daily_summary(self):
-        now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5)))
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        now_pkt = now_utc.astimezone(PKT)
+        logging.info(
+            "Leaderboard task triggered: utc=%s pakistan=%s",
+            now_utc.isoformat(), now_pkt.isoformat(),
+        )
+        try:
+            await self._run_daily_summary(now_pkt)
+        except Exception:
+            # A failed run must not terminate the fixed-time scheduler.
+            logging.exception("Daily notification task failed; scheduler remains active")
+
+    async def _run_daily_summary(self, now: datetime.datetime):
         current_time_str = now.strftime("%H:%M")
         # Load configs in a thread to avoid blocking the event loop
         configs = await run_db(_fetch_all_configs)
@@ -40,6 +72,12 @@ class NotificationsCog(commands.Cog):
                     else:
                         channel = None
                     if channel:
+                        permissions = channel.permissions_for(guild.me)
+                        if not permissions.send_messages or not permissions.embed_links:
+                            logging.warning(
+                                "Leaderboard channel %s is missing send_messages or embed_links for the bot",
+                                channel.id,
+                            )
                         # Delete the previous leaderboard message to keep the channel clean
                         try:
                             async for msg in channel.history(limit=50):
@@ -50,6 +88,7 @@ class NotificationsCog(commands.Cog):
                         except Exception as delete_err:
                             print(f"Failed to delete old leaderboard: {delete_err}")
 
+                        logging.info("Generating leaderboard for guild %s", guild.id)
                         embed = discord.Embed(title="Morning Leaderboard Update", description="Top 10 users by total XP.", color=discord.Color.gold())
                         allowed_role_ids = await run_db(_get_main_lb_role_ids, config.guild_id)
                         top_users = []
@@ -69,19 +108,27 @@ class NotificationsCog(commands.Cog):
                             embed.description = "No XP data yet!"
                         else:
                             for index, u in enumerate(top_users, start=1):
-                                member = guild.get_member(u.user_id)
-                                name = member.display_name if member else f"Unknown ({u.user_id})"
+                                member = guild.get_member(int(u['user_id']))
+                                name = member.display_name if member else f"Unknown ({u['user_id']})"
                                 prefix = f"#{index}"
                                 embed.add_field(
                                     name=f"{prefix} {name}",
-                                    value=f"Level {u.level}\n{u.xp} XP",
+                                    value=f"Level {u['level']}\n{u['xp']} XP",
                                     inline=False
                                 )
                         
+                        logging.info("Sending leaderboard to channel %s in guild %s", channel.id, guild.id)
                         try:
                             await channel.send(embed=embed)
-                        except discord.Forbidden:
-                            pass
+                        except discord.HTTPException:
+                            logging.exception("Failed to send leaderboard to channel %s", channel.id)
+                        else:
+                            logging.info("Leaderboard sent successfully to channel %s", channel.id)
+                    else:
+                        logging.warning(
+                            "Configured leaderboard channel %s was not found in guild %s",
+                            leaderboard_channel_id, guild.id,
+                        )
                 
                 # Nightly Attendance at 23:50
                 if current_time_str == "23:50" and config.attendance_enabled and config.attendance_channel:
@@ -145,8 +192,8 @@ class NotificationsCog(commands.Cog):
                             user = user_map.get(member.id)
                             if not user: continue
                             att_count = att_map.get(member.id, 0)
-                            score = user.xp + (att_count * 50)
-                            scores.append((member, score, user.level, user.xp, att_count))
+                            score = user['xp'] + (att_count * 50)
+                            scores.append((member, score, user['level'], user['xp'], att_count))
                         
                         scores.sort(key=lambda x: x[1], reverse=True)
                         top_3 = scores[:3]
@@ -170,6 +217,15 @@ class NotificationsCog(commands.Cog):
     @daily_summary.before_loop
     async def before_daily_summary(self):
         await self.bot.wait_until_ready()
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        now_pkt = now_utc.astimezone(PKT)
+        next_run_utc = _next_leaderboard_run(now_utc)
+        logging.info(
+            "Leaderboard scheduler started: current_utc=%s current_pakistan=%s "
+            "next_leaderboard_run=%s (%s)",
+            now_utc.isoformat(), now_pkt.isoformat(),
+            next_run_utc.isoformat(), next_run_utc.astimezone(PKT).isoformat(),
+        )
 
 async def setup(bot):
     await bot.add_cog(NotificationsCog(bot))
