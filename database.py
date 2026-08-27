@@ -189,6 +189,9 @@ class GuildConfig(Base):
     # CVE and news
     cve_and_news_enabled = Column(Boolean, default=False)
     cve_and_news_channel = Column(String, nullable=True)
+    # Verification
+    verification_enabled = Column(Boolean, default=False)
+    verification_channel = Column(String, nullable=True)
     # Note: legacy `support_feature_enabled` removed; `support_enabled` used instead
 
 class UserData(Base):
@@ -253,6 +256,16 @@ class NewsLog(Base):
     link = Column(String, primary_key=True)
     posted_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
 
+
+class VerificationRecord(Base):
+    __tablename__ = "verification_records"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    discord_user_id = Column(BigInteger, nullable=False, unique=True, index=True)
+    verification_id = Column(String(10), nullable=False, unique=True, index=True)
+    email = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))), onupdate=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
+
 Base.metadata.create_all(bind=engine)
 
 
@@ -277,6 +290,12 @@ def ensure_database_columns():
     if "cve_and_news_channel" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN cve_and_news_channel VARCHAR"))
+    if "verification_enabled" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN verification_enabled BOOLEAN DEFAULT FALSE"))
+    if "verification_channel" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN verification_channel VARCHAR"))
     # legacy support_feature_enabled removed; support_category is already handled above
     if "leaderboard_enabled" not in columns:
         with engine.begin() as conn:

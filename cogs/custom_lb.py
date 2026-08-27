@@ -153,6 +153,7 @@ class CustomLBCog(commands.Cog):
             app_commands.Choice(name="Welcome Messages", value="welcome"),
             app_commands.Choice(name="Leaderboard", value="leaderboard"),
             app_commands.Choice(name="Level Up Announcements", value="level_up_announcements"),
+            app_commands.Choice(name="Verification", value="verification"),
         ]
     )
     @app_commands.default_permissions(administrator=True)
@@ -248,6 +249,16 @@ class CustomLBCog(commands.Cog):
                 await interaction.followup.send(f"Level-up announcements enabled for {channel.mention}.", ephemeral=True)
                 return
 
+            if option.value == "verification":
+                if not isinstance(channel, discord.TextChannel):
+                    await interaction.followup.send("Verification must use a text channel.", ephemeral=True)
+                    return
+                config.verification_enabled = True
+                config.verification_channel = str(channel.id)
+                db.commit()
+                await interaction.followup.send(f"Verification enabled for {channel.mention}.", ephemeral=True)
+                return
+
             await interaction.followup.send("That option is not supported yet.", ephemeral=True)
         finally:
             db.close()
@@ -304,6 +315,7 @@ class CustomLBCog(commands.Cog):
             app_commands.Choice(name="Hall of Fame", value="hall_of_fame"),
             app_commands.Choice(name="Leaderboard", value="leaderboard"),
             app_commands.Choice(name="Level Up Announcements", value="level_up_announcements"),
+            app_commands.Choice(name="Verification", value="verification"),
         ]
     )
     @app_commands.default_permissions(administrator=True)
@@ -374,6 +386,13 @@ class CustomLBCog(commands.Cog):
                 config.level_up_announcements_channel = None
                 db.commit()
                 await interaction.followup.send("Level-up announcements disabled.", ephemeral=True)
+                return
+
+            if option.value == "verification":
+                config.verification_enabled = False
+                config.verification_channel = None
+                db.commit()
+                await interaction.followup.send("Verification disabled. Existing verification records were preserved.", ephemeral=True)
                 return
 
             await interaction.followup.send("That option is not supported yet.", ephemeral=True)
