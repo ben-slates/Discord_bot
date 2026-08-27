@@ -91,7 +91,7 @@ class VerificationCog(commands.Cog):
     async def _require_channel(self, interaction):
         if await self._configured_channel(interaction):
             return True
-        await interaction.response.send_message(
+        await interaction.followup.send(
             "Verification is disabled or this is not the configured verification channel.",
             ephemeral=True,
         )
@@ -100,43 +100,46 @@ class VerificationCog(commands.Cog):
     @app_commands.command(name="verifi", description="Register your email and receive a permanent verification ID")
     @app_commands.describe(email="Your email address")
     async def verifi(self, interaction: discord.Interaction, email: str):
+        await interaction.response.defer(ephemeral=True)
         if not await self._require_channel(interaction):
             return
         email = email.strip().lower()
         if not EMAIL_RE.fullmatch(email):
-            await interaction.response.send_message("Please provide a valid email address.", ephemeral=True)
+            await interaction.followup.send("Please provide a valid email address.", ephemeral=True)
             return
         try:
             verification_id, created = await run_db(_create_or_get_record, interaction.user.id, email)
         except Exception:
-            await interaction.response.send_message("Verification could not be completed right now. Please try again.", ephemeral=True)
+            await interaction.followup.send("Verification could not be completed right now. Please try again.", ephemeral=True)
             return
         if not created:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "You already have a permanent Verification ID. Use `/verify` to view it.",
                 ephemeral=True,
             )
             return
         message = f"Verification successful.\n\nYour Verification ID:\n`{verification_id}`\n\nKeep this ID safe. It is permanently assigned to your account."
-        await interaction.response.send_message(message, ephemeral=True)
+        await interaction.followup.send(message, ephemeral=True)
 
     @app_commands.command(name="verify", description="Show your existing verification ID")
     async def verify(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
         if not await self._require_channel(interaction):
             return
         verification_id = await run_db(_get_record, interaction.user.id)
         if verification_id:
-            await interaction.response.send_message(f"Your Verification ID:\n`{verification_id}`", ephemeral=True)
+            await interaction.followup.send(f"Your Verification ID:\n`{verification_id}`", ephemeral=True)
         else:
-            await interaction.response.send_message("You are not registered yet. Use `/verifi` with your email first.", ephemeral=True)
+            await interaction.followup.send("You are not registered yet. Use `/verifi` with your email first.", ephemeral=True)
 
     @app_commands.command(name="verify-list", description="Admin: view verification records")
     @app_commands.default_permissions(administrator=True)
     @app_commands.checks.has_permissions(administrator=True)
     async def verify_list(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
         records = await run_db(_list_records)
         if not records:
-            await interaction.response.send_message("No verification records found.", ephemeral=True)
+            await interaction.followup.send("No verification records found.", ephemeral=True)
             return
         lines = ["Verification ID | Discord User | Email"]
         for verification_id, user_id, email in records:
@@ -146,7 +149,7 @@ class VerificationCog(commands.Cog):
         content = "\n".join(lines)
         if len(content) > 1900:
             content = content[:1890] + "\n... (list truncated)"
-        await interaction.response.send_message(f"```text\n{content}\n```", ephemeral=True)
+        await interaction.followup.send(f"```text\n{content}\n```", ephemeral=True)
 
 
 async def setup(bot):
