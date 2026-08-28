@@ -1,4 +1,45 @@
 {
   "last_flush": "2026-08-28T09:08:21.700410+05:00",
-  "entries": []
+  "entries": [
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-77365",
+      "title": "CVE-2026-77365 - Optimole <= 4.2.10 - Unauthenticated Stored Cross-Site Scripting via 'a' (above_fold_images) Parameter",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-77365\n  <br />\n  <strong>Published :</strong> Aug. 28, 2026, 5:16 a.m. | 34\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>The Optimole \u2013 Optimize Images | Convert WebP & AVIF | CDN & Lazy Load | Image Optimization plugin for WordPress is vulnerable to Stored Cross-Site Scripting via the 'a' (above_fold_images) parameter in all versions up to, and including, 4.2.10 due to insufficient input sanitization and output escaping. This makes it possible for unauthenticated attackers to inject arbitrary web scripts in pages that will execute whenever a user accesses an injected page.\n  <br />\n  <strong>Severity:</strong> 7.2 | HIGH\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Fri, 28 Aug 2026 05:16:46 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-28T11:10:21.484282+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-82081",
+      "title": "CVE-2026-82081 - wallabag Server-Side Request Forgery",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-82081\n  <br />\n  <strong>Published :</strong> Aug. 28, 2026, 5:16 a.m. | 34\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>wallabag 2 through 2.6.14 allows SSRF because a crafted title or content field is mishandled during PDF export.\n  <br />\n  <strong>Severity:</strong> 6.4 | MEDIUM\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Fri, 28 Aug 2026 05:16:46 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-28T11:10:21.484282+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-82082",
+      "title": "CVE-2026-82082 - Green-Computing\uff5cNUMail - OS Command Injection",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-82082\n  <br />\n  <strong>Published :</strong> Aug. 28, 2026, 5:16 a.m. | 34\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>NUMail developed by Green-Computing has an OS Command Injection vulnerability. Unauthenticated remote attackers can inject arbitrary OS commands and execute them on the server.\n  <br />\n  <strong>Severity:</strong> 9.8 | CRITICAL\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Fri, 28 Aug 2026 05:16:47 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-28T11:10:21.484282+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-82089",
+      "title": "CVE-2026-82089 - wallabag Android Application Cross-Site Scripting Vulnerability",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-82089\n  <br />\n  <strong>Published :</strong> Aug. 28, 2026, 5:16 a.m. | 34\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>The wallabag (aka fr.gaulupeau.apps.InThePoche) application through 2.6.0 for Android allows XSS because /api/entries data is loaded into a WebView.\n  <br />\n  <strong>Severity:</strong> 8.8 | HIGH\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Fri, 28 Aug 2026 05:16:47 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-28T11:10:21.484282+05:00"
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-82090",
+      "title": "CVE-2026-82090 - Pocket Cross-Site Scripting Vulnerability",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-82090\n  <br />\n  <strong>Published :</strong> Aug. 28, 2026, 5:16 a.m. | 34\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>Pocket through 8.33.0.0 allows XSS because \"Save to Pocket\" injects external HTML into the DOM.\u00a0\u00a0JavaScript code can alter the application state via native bridge methods.\n  <br />\n  <strong>Severity:</strong> 9.2 | CRITICAL\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Fri, 28 Aug 2026 05:16:47 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-08-28T11:10:21.484282+05:00"
+    }
+  ]
 }

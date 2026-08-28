@@ -76,6 +76,23 @@ def _list_records():
         db.close()
 
 
+class VerificationEmailModal(discord.ui.Modal, title="Verify — Email"):
+    def __init__(self, cog):
+        super().__init__()
+        self.cog = cog
+        self.email = discord.ui.TextInput(
+            label="Email address",
+            placeholder="student@example.com",
+            required=True,
+            max_length=254,
+        )
+        self.add_item(self.email)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        await self.cog._register_email(interaction, self.email.value)
+
+
 class VerificationCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -97,10 +114,7 @@ class VerificationCog(commands.Cog):
         )
         return False
 
-    @app_commands.command(name="verifi", description="Register your email and receive a permanent verification ID")
-    @app_commands.describe(email="Your email address")
-    async def verifi(self, interaction: discord.Interaction, email: str):
-        await interaction.response.defer(ephemeral=True)
+    async def _register_email(self, interaction: discord.Interaction, email: str):
         if not await self._require_channel(interaction):
             return
         email = email.strip().lower()
@@ -114,15 +128,19 @@ class VerificationCog(commands.Cog):
             return
         if not created:
             await interaction.followup.send(
-                "You already have a permanent Verification ID. Use `/verify` to view it.",
+                "You already have a permanent Verification ID. Use `/check-uuid` to view it.",
                 ephemeral=True,
             )
             return
         message = f"Verification successful.\n\nYour Verification ID:\n`{verification_id}`\n\nKeep this ID safe. It is permanently assigned to your account."
         await interaction.followup.send(message, ephemeral=True)
 
-    @app_commands.command(name="verify", description="Show your existing verification ID")
+    @app_commands.command(name="verify", description="Register your email and receive a permanent verification ID")
     async def verify(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(VerificationEmailModal(self))
+
+    @app_commands.command(name="check-uuid", description="Show your existing verification ID")
+    async def check_uuid(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         if not await self._require_channel(interaction):
             return
@@ -130,7 +148,7 @@ class VerificationCog(commands.Cog):
         if verification_id:
             await interaction.followup.send(f"Your Verification ID:\n`{verification_id}`", ephemeral=True)
         else:
-            await interaction.followup.send("You are not registered yet. Use `/verifi` with your email first.", ephemeral=True)
+            await interaction.followup.send("You are not registered yet. Use `/verify` and enter your email first.", ephemeral=True)
 
     @app_commands.command(name="verify-list", description="Admin: view verification records")
     @app_commands.default_permissions(administrator=True)

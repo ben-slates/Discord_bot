@@ -1,0 +1,2 @@
+# Generated certificates are private runtime files and must never be committed.
+*.pdf

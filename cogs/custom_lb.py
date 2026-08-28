@@ -143,6 +143,28 @@ class CustomLBCog(commands.Cog):
         finally:
             db.close()
 
+    @app_commands.command(name="enable-ceritification", description="Admin:enable certificate generation for a role and channel")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(role="Only members with this role may generate certificates", channel="Channel where certificates may be generated")
+    async def enable_ceritification(self, interaction: discord.Interaction, role: discord.Role, channel: discord.TextChannel):
+        await interaction.response.defer(ephemeral=True)
+        db = SessionLocal()
+        try:
+            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            if not config:
+                config = GuildConfig(guild_id=str(interaction.guild_id))
+                db.add(config)
+            config.certificate_enabled = True
+            config.certificate_role = str(role.id)
+            config.certificate_channel = str(channel.id)
+            db.commit()
+            await interaction.followup.send(
+                f"Certificate generation enabled for members with {role.mention} in {channel.mention}.",
+                ephemeral=True,
+            )
+        finally:
+            db.close()
+
     @app_commands.command(name="enable", description="Admin:Enable a feature for this server")
     @app_commands.choices(
         option=[
@@ -316,6 +338,7 @@ class CustomLBCog(commands.Cog):
             app_commands.Choice(name="Leaderboard", value="leaderboard"),
             app_commands.Choice(name="Level Up Announcements", value="level_up_announcements"),
             app_commands.Choice(name="Verification", value="verification"),
+            app_commands.Choice(name="Certificate", value="certificate"),
         ]
     )
     @app_commands.default_permissions(administrator=True)
@@ -393,6 +416,14 @@ class CustomLBCog(commands.Cog):
                 config.verification_channel = None
                 db.commit()
                 await interaction.followup.send("Verification disabled. Existing verification records were preserved.", ephemeral=True)
+                return
+
+            if option.value == "certificate":
+                config.certificate_enabled = False
+                config.certificate_role = None
+                config.certificate_channel = None
+                db.commit()
+                await interaction.followup.send("Certificate generation disabled. Existing verification records were preserved.", ephemeral=True)
                 return
 
             await interaction.followup.send("That option is not supported yet.", ephemeral=True)

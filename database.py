@@ -192,6 +192,10 @@ class GuildConfig(Base):
     # Verification
     verification_enabled = Column(Boolean, default=False)
     verification_channel = Column(String, nullable=True)
+    # Certificates
+    certificate_enabled = Column(Boolean, default=False)
+    certificate_role = Column(String, nullable=True)
+    certificate_channel = Column(String, nullable=True)
     # Note: legacy `support_feature_enabled` removed; `support_enabled` used instead
 
 class UserData(Base):
@@ -296,6 +300,15 @@ def ensure_database_columns():
     if "verification_channel" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN verification_channel VARCHAR"))
+    if "certificate_enabled" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN certificate_enabled BOOLEAN DEFAULT FALSE"))
+    if "certificate_role" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN certificate_role VARCHAR"))
+    if "certificate_channel" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN certificate_channel VARCHAR"))
     # legacy support_feature_enabled removed; support_category is already handled above
     if "leaderboard_enabled" not in columns:
         with engine.begin() as conn:
