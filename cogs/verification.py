@@ -146,10 +146,24 @@ class VerificationCog(commands.Cog):
             member = interaction.guild.get_member(int(user_id)) if interaction.guild else None
             display = member.display_name if member else str(user_id)
             lines.append(f"{verification_id} | {display} | {email}")
-        content = "\n".join(lines)
-        if len(content) > 1900:
-            content = content[:1890] + "\n... (list truncated)"
-        await interaction.followup.send(f"```text\n{content}\n```", ephemeral=True)
+        # Discord limits each message to 2,000 characters. Split at complete
+        # records so every verification entry is shown, while keeping every
+        # page ephemeral for the administrator who requested it.
+        pages = []
+        current = []
+        current_length = len("```text\n\n```")
+        for line in lines:
+            if current and current_length + len(line) + 1 > 1900:
+                pages.append("\n".join(current))
+                current = []
+                current_length = len("```text\n\n```")
+            current.append(line)
+            current_length += len(line) + 1
+        if current:
+            pages.append("\n".join(current))
+
+        for page in pages:
+            await interaction.followup.send(f"```text\n{page}\n```", ephemeral=True)
 
 
 async def setup(bot):
