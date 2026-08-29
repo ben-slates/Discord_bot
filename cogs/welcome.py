@@ -23,7 +23,7 @@ class WelcomeCog(commands.Cog):
                 return
 
             sys.path.append(os.path.join(os.path.dirname(__file__), "..", "utils"))
-            from welcomecard import generate_welcome_card
+            from welcomecard import generate_welcome_card # type: ignore
 
             try:
                 file = await generate_welcome_card(member)
