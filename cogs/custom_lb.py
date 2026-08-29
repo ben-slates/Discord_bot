@@ -143,10 +143,10 @@ class CustomLBCog(commands.Cog):
         finally:
             db.close()
 
-    @app_commands.command(name="enable-ceritification", description="Admin:enable certificate generation for a role and channel")
+    @app_commands.command(name="enable-certification", description="Admin:enable certificate generation for a role and channel")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(role="Only members with this role may generate certificates", channel="Channel where certificates may be generated")
-    async def enable_ceritification(self, interaction: discord.Interaction, role: discord.Role, channel: discord.TextChannel):
+    async def enable_certification(self, interaction: discord.Interaction, role: discord.Role, channel: discord.TextChannel):
         await interaction.response.defer(ephemeral=True)
         db = SessionLocal()
         try:

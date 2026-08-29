@@ -16,7 +16,7 @@ from utils.db_executor import run_db
 
 
 UUID_RE = re.compile(r"^0x[0-9A-Fa-f]{8}$")
-TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "assets" / "ceritficate_template" / "input.docx"
+TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "assets" / "certificate_template" / "input.docx"
 CERTIFICATE_DIR = Path(__file__).resolve().parent.parent / "assets" / "batch1"
 
 
@@ -111,7 +111,7 @@ def _render_certificate(name: str, team: str, verification_id: str) -> bytes:
     except ImportError as exc:
         raise RuntimeError("Certificate generation requires the python-docx package.") from exc
     if not TEMPLATE_PATH.is_file():
-        raise RuntimeError("Certificate template is missing from assets/ceritficate_template/input.docx.")
+        raise RuntimeError("Certificate template is missing from assets/certificate_template/input.docx.")
     soffice = shutil.which("soffice") or shutil.which("libreoffice") or shutil.which("lowriter")
     if not soffice:
         raise RuntimeError("Certificate PDF generation requires LibreOffice (soffice) on the server.")
@@ -281,7 +281,7 @@ class CertificateCog(commands.Cog):
         certificate_path = _certificate_path(verification_id)
         if await asyncio.to_thread(certificate_path.is_file):
             await interaction.followup.send(
-                "You already generated your certificate. Use `/get-critficate` to get your certificate.",
+                "You already generated your certificate. Use `/get-certificate` to get your certificate.",
                 ephemeral=True,
             )
             return
@@ -294,7 +294,7 @@ class CertificateCog(commands.Cog):
             return
         if not saved:
             await interaction.followup.send(
-                "You already generated your certificate. Use `/get-critficate` to get your certificate.",
+                "You already generated your certificate. Use `/get-certificate` to get your certificate.",
                 ephemeral=True,
             )
             return
@@ -332,8 +332,8 @@ class CertificateCog(commands.Cog):
             ephemeral=True,
         )
 
-    @app_commands.command(name="get-critficate", description="Get your previously generated certificate")
-    async def get_critficate(self, interaction: discord.Interaction):
+    @app_commands.command(name="get-certificate", description="Get your previously generated certificate")
+    async def get_certificate(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         certificate_config = await run_db(_certificate_config, interaction.guild_id)
         if not certificate_config:
