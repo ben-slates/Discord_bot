@@ -228,6 +228,19 @@ class AttendanceLog(Base):
         Index("ix_attendance_logs_guild_user_date", "guild_id", "user_id", "date"),
     )
 
+
+class AdminPresenceInterval(Base):
+    __tablename__ = "admin_presence_intervals"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    guild_id = Column(String, nullable=False, index=True)
+    user_id = Column(String, nullable=False, index=True)
+    status = Column(String, nullable=False)  # online or dnd
+    started_at = Column(DateTime(timezone=True), nullable=False)
+    ended_at = Column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (
+        Index("ix_admin_presence_guild_user_start", "guild_id", "user_id", "started_at"),
+    )
+
 class Ticket(Base):
     __tablename__ = "tickets"
     id = Column(Integer, primary_key=True)
@@ -267,6 +280,8 @@ class VerificationRecord(Base):
     discord_user_id = Column(BigInteger, nullable=False, unique=True, index=True)
     verification_id = Column(String(10), nullable=False, unique=True, index=True)
     email = Column(String, nullable=False)
+    certificate_name = Column(String, nullable=True)
+    certificate_team = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))), onupdate=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
 
@@ -309,6 +324,13 @@ def ensure_database_columns():
     if "certificate_channel" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN certificate_channel VARCHAR"))
+    verification_columns = {column["name"] for column in inspector.get_columns("verification_records")}
+    if "certificate_name" not in verification_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE verification_records ADD COLUMN certificate_name VARCHAR"))
+    if "certificate_team" not in verification_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE verification_records ADD COLUMN certificate_team VARCHAR"))
     # legacy support_feature_enabled removed; support_category is already handled above
     if "leaderboard_enabled" not in columns:
         with engine.begin() as conn:

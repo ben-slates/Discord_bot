@@ -146,7 +146,7 @@ class VerificationCog(commands.Cog):
             return
         verification_id = await run_db(_get_record, interaction.user.id)
         if verification_id:
-            await interaction.followup.send(f"Your Verification ID:\n`{verification_id}`", ephemeral=True)
+            await interaction.followup.send(f"Your Verification ID:\n```{verification_id}```", ephemeral=True)
         else:
             await interaction.followup.send("You are not registered yet. Use `/verify` and enter your email first.", ephemeral=True)
 
@@ -155,6 +155,8 @@ class VerificationCog(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def verify_list(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
+        if not await self._require_channel(interaction):
+            return
         records = await run_db(_list_records)
         if not records:
             await interaction.followup.send("No verification records found.", ephemeral=True)

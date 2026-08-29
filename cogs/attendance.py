@@ -8,9 +8,13 @@ from collections import defaultdict
 import asyncio
 import io
 import csv
-from database import SessionLocal, GuildConfig, UserData, AttendanceLog, HallOfFameEntry
+from zoneinfo import ZoneInfo
+from database import SessionLocal, GuildConfig, UserData, AttendanceLog, HallOfFameEntry, AdminPresenceInterval
 from utils.db_executor import run_db, run_db_profiled
 from utils.diag import instrument_async
+
+PKT = ZoneInfo("Asia/Karachi")
+ACTIVE_ADMIN_STATUSES = {"online", "dnd"}
 
 class AttendanceCog(commands.Cog):
     def __init__(self, bot):
@@ -97,9 +101,20 @@ class AttendanceCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_presence_update(self, before: discord.Member, after: discord.Member):
-        # Presence updates no longer mark attendance. Attendance is recorded only when
-        # a user sends a message (`on_message`) or joins/is in voice (`on_voice_state_update`).
-        return
+        if after.bot or not after.guild:
+            return
+        status = str(after.status)
+        before_is_admin = before.guild_permissions.administrator
+        after_is_admin = after.guild_permissions.administrator
+        if not after_is_admin:
+            status = "offline"
+        if (
+            before_is_admin == after_is_admin
+            and str(before.status) == str(after.status)
+            and status in ACTIVE_ADMIN_STATUSES
+        ):
+            return
+        await run_db(_record_admin_presence_transition, after.guild.id, after.id, status)
 
     def _mark_message_attendance(self, guild_id: int, author_id: int):
         db = SessionLocal()
@@ -434,12 +449,17 @@ class AttendanceCog(commands.Cog):
         self._initial_scan_done = True
         await self.bot.wait_until_ready()
         for guild in self.bot.guilds:
-            # Startup scan runs alongside the News loop.  This configuration
-            # lookup must remain off Discord's event-loop thread.
+            # Only track administrator presence for guilds using attendance.
             config = await run_db(self._get_guild_config, guild.id)
             if not config or not config.attendance_enabled:
                 continue
-
+            now = datetime.datetime.now(datetime.timezone.utc)
+            active_admin_ids = [
+                member.id for member in guild.members
+                if not member.bot and member.guild_permissions.administrator
+                and str(member.status) in ACTIVE_ADMIN_STATUSES
+            ]
+            await run_db(_initialize_admin_presence, guild.id, active_admin_ids, now)
             marked = set()
             # Scan recent messages, but only mark messages from TODAY (timezone UTC+5)
             tz = datetime.timezone(datetime.timedelta(hours=5))
@@ -490,6 +510,114 @@ class AttendanceCog(commands.Cog):
             return db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
         finally:
             db.close()
+
+    @app_commands.command(name="check-status", description="Admin: check an administrator's monthly active-status attendance")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.describe(member="The administrator whose status should be checked")
+    async def check_status(self, interaction: discord.Interaction, member: discord.Member):
+        await interaction.response.defer(ephemeral=True)
+        config = await run_db(self._get_guild_config, interaction.guild_id)
+        if not config or not config.attendance_enabled or not config.attendance_channel:
+            await interaction.followup.send("Attendance is not enabled for this server.", ephemeral=True)
+            return
+        if str(interaction.channel_id) != config.attendance_channel:
+            await interaction.followup.send(f"This command can only be used in <#{config.attendance_channel}>.", ephemeral=True)
+            return
+        if not member.guild_permissions.administrator:
+            await interaction.followup.send("The selected member must have the Administrator permission.", ephemeral=True)
+            return
+        now = datetime.datetime.now(datetime.timezone.utc)
+        month_start = now.astimezone(PKT).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        rows = await run_db(_get_admin_month_status, interaction.guild_id, member.id, month_start, now)
+        present_days = sum(row[2] for row in rows)
+        details = "\n".join(
+            f"{date}: {hours:.2f}h — {'Present' if present else 'Absent'}"
+            for date, hours, present in rows
+        ) or "No days tracked yet."
+        embed = discord.Embed(
+            title=f"Administrator Status: {member.display_name}",
+            description=details,
+            color=discord.Color.green() if present_days else discord.Color.orange(),
+        )
+        embed.set_footer(text=f"{present_days}/{len(rows)} days present (minimum 8 hours online or dnd)")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+def _record_admin_presence_transition(guild_id, user_id, status):
+    db = SessionLocal()
+    try:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        current = db.query(AdminPresenceInterval).filter_by(
+            guild_id=str(guild_id), user_id=str(user_id), ended_at=None,
+        ).order_by(AdminPresenceInterval.started_at.desc()).first()
+        if status in ACTIVE_ADMIN_STATUSES:
+            if current and current.status == status:
+                return
+            if current:
+                current.ended_at = now
+            db.add(AdminPresenceInterval(
+                guild_id=str(guild_id), user_id=str(user_id), status=status,
+                started_at=now,
+            ))
+        elif current:
+            current.ended_at = now
+        db.commit()
+    finally:
+        db.close()
+
+
+def _initialize_admin_presence(guild_id, active_admin_ids, now):
+    db = SessionLocal()
+    try:
+        # Close intervals across a bot restart so downtime is never counted.
+        db.query(AdminPresenceInterval).filter_by(
+            guild_id=str(guild_id), ended_at=None,
+        ).update({AdminPresenceInterval.ended_at: now}, synchronize_session=False)
+        for user_id in active_admin_ids:
+            db.add(AdminPresenceInterval(
+                guild_id=str(guild_id), user_id=str(user_id), status="online",
+                started_at=now,
+            ))
+        db.commit()
+    finally:
+        db.close()
+
+
+def _get_admin_month_status(guild_id, user_id, month_start, now):
+    db = SessionLocal()
+    try:
+        intervals = db.query(AdminPresenceInterval).filter(
+            AdminPresenceInterval.guild_id == str(guild_id),
+            AdminPresenceInterval.user_id == str(user_id),
+            AdminPresenceInterval.started_at < now,
+            (AdminPresenceInterval.ended_at.is_(None) | (AdminPresenceInterval.ended_at > month_start)),
+        ).all()
+        local_now = now.astimezone(PKT)
+        local_day = month_start.astimezone(PKT)
+        result = []
+        while local_day.date() <= local_now.date():
+            day_start = local_day
+            day_end = min(local_day + datetime.timedelta(days=1), local_now)
+            seconds = 0.0
+            for interval in intervals:
+                interval_start = _as_utc(interval.started_at)
+                interval_end = _as_utc(interval.ended_at) if interval.ended_at else now
+                start = max(interval_start, day_start.astimezone(datetime.timezone.utc))
+                end = min(interval_end, day_end.astimezone(datetime.timezone.utc))
+                if end > start:
+                    seconds += (end - start).total_seconds()
+            result.append((local_day.strftime("%Y-%m-%d"), seconds / 3600, seconds >= 8 * 3600))
+            local_day += datetime.timedelta(days=1)
+        return result
+    finally:
+        db.close()
+
+
+def _as_utc(value):
+    if value.tzinfo is None:
+        return value.replace(tzinfo=datetime.timezone.utc)
+    return value.astimezone(datetime.timezone.utc)
 
 async def setup(bot):
     await bot.add_cog(AttendanceCog(bot))

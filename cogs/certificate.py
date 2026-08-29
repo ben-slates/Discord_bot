@@ -70,6 +70,33 @@ def _save_certificate_if_new(path, pdf_bytes):
         return False
 
 
+def _store_certificate_details(user_id, verification_id, name, team):
+    db = SessionLocal()
+    try:
+        record = db.query(VerificationRecord).filter_by(
+            discord_user_id=int(user_id), verification_id=verification_id,
+        ).first()
+        if not record:
+            return False
+        record.certificate_name = name
+        record.certificate_team = team
+        db.commit()
+        return True
+    finally:
+        db.close()
+
+
+def _get_certificate_details(verification_id):
+    db = SessionLocal()
+    try:
+        record = db.query(VerificationRecord).filter_by(verification_id=verification_id).first()
+        if not record or not record.certificate_name or not record.certificate_team:
+            return None
+        return record.certificate_name, record.certificate_team
+    finally:
+        db.close()
+
+
 def _replace_text(paragraph, replacements):
     for run in paragraph.runs:
         for placeholder, value in replacements.items():
@@ -77,7 +104,7 @@ def _replace_text(paragraph, replacements):
                 run.text = run.text.replace(placeholder, value)
 
 
-def _render_certificate(name: str, team: str) -> bytes:
+def _render_certificate(name: str, team: str, verification_id: str) -> bytes:
     """Render the supplied template to PDF; called outside the event loop."""
     try:
         from docx import Document
@@ -94,7 +121,7 @@ def _render_certificate(name: str, team: str) -> bytes:
         docx_path = temp_path / "certificate.docx"
         # The supplied template contains both the primary name and a smaller
         # repeated name line, plus the team placeholder.
-        replacements = {"{name}": name, "{name_small}": name, "{team}": team}
+        replacements = {"{name}": name, "{name_small}": name, "{team}": team, "{uuid}": verification_id}
         document = Document(str(TEMPLATE_PATH))
         for paragraph in document.paragraphs:
             _replace_text(paragraph, replacements)
@@ -260,7 +287,7 @@ class CertificateCog(commands.Cog):
             return
 
         try:
-            pdf_bytes = await asyncio.to_thread(_render_certificate, name, team)
+            pdf_bytes = await asyncio.to_thread(_render_certificate, name, team, verification_id)
             saved = await asyncio.to_thread(_save_certificate_if_new, certificate_path, pdf_bytes)
         except Exception as exc:
             await interaction.followup.send(f"Certificate generation failed: {exc}", ephemeral=True)
@@ -271,15 +298,50 @@ class CertificateCog(commands.Cog):
                 ephemeral=True,
             )
             return
+        await run_db(_store_certificate_details, interaction.user.id, verification_id, name, team)
         await interaction.followup.send(
             "Your certificate has been generated.",
             file=discord.File(str(certificate_path), filename=certificate_path.name),
             ephemeral=True,
         )
 
+    @app_commands.command(name="validate-cert", description="Validate a generated certificate by UUID")
+    @app_commands.describe(uuid="The certificate verification ID")
+    async def validate_cert(self, interaction: discord.Interaction, uuid: str):
+        await interaction.response.defer(ephemeral=True)
+        raw_uuid = uuid.strip()
+        verification_id = f"0x{raw_uuid[2:].upper()}" if raw_uuid[:2].lower() == "0x" else raw_uuid
+        certificate_config = await run_db(_certificate_config, interaction.guild_id)
+        if not certificate_config:
+            await interaction.followup.send("Certificate generation is not enabled for this server.", ephemeral=True)
+            return
+        if str(interaction.channel_id) != certificate_config[1]:
+            await interaction.followup.send("Use the configured certificate channel for validation.", ephemeral=True)
+            return
+        if not UUID_RE.fullmatch(verification_id):
+            await interaction.followup.send("Invalid certificate UUID format. Use `0xXXXXXXXX`.", ephemeral=True)
+            return
+        details = await run_db(_get_certificate_details, verification_id)
+        certificate_path = _certificate_path(verification_id)
+        if not details or not await asyncio.to_thread(certificate_path.is_file):
+            await interaction.followup.send("No generated certificate was found for that UUID.", ephemeral=True)
+            return
+        name, team = details
+        await interaction.followup.send(
+            f"Certificate is valid.\nName: **{name}**\nTeam: **{team}**",
+            ephemeral=True,
+        )
+
     @app_commands.command(name="get-critficate", description="Get your previously generated certificate")
     async def get_critficate(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
+        certificate_config = await run_db(_certificate_config, interaction.guild_id)
+        if not certificate_config:
+            await interaction.followup.send("Certificate generation is not enabled for this server.", ephemeral=True)
+            return
+        if str(interaction.channel_id) != certificate_config[1]:
+            await interaction.followup.send("Use the configured certificate channel to get your certificate.", ephemeral=True)
+            return
         verification_id = await run_db(_get_user_verification_id, interaction.user.id)
         if not verification_id:
             await interaction.followup.send("You do not have a verification record yet.", ephemeral=True)
