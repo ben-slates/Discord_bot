@@ -37,13 +37,13 @@ def calculate_required_xp(level: int) -> int:
         return 0
     return (20 * (level**2)) + (100 * level) + 250
 
-def calculate_level(total_xp: int, max_level: int = 100) -> int:
+def calculate_level(total_xp: int, max_level: int | None = None) -> int:
     if total_xp < 0:
         return 1
     level = 1
-    while level < max_level and total_xp >= calculate_required_xp(level):
+    while (max_level is None or level < max_level) and total_xp >= calculate_required_xp(level):
         level += 1
-    return min(level, max_level)
+    return min(level, max_level) if max_level is not None else level
 
 class LevelingCog(commands.Cog):
     def __init__(self, bot):
@@ -339,7 +339,7 @@ class LevelingCog(commands.Cog):
                 
                 level, xp, rank_pos, daily_xp, daily_limit, _ = await run_db(self._get_card_data, interaction.guild_id, target.id)
                 file = await generate_rank_card(
-                    target, level, xp, rank_pos, daily_xp, daily_limit, 100,
+                    target, level, xp, rank_pos, daily_xp, daily_limit, None,
                     profile_title=interaction.guild.name if interaction.guild else "Community Profile",
                 )
                 await interaction.followup.send(file=file)
@@ -396,7 +396,6 @@ class LevelingCog(commands.Cog):
             card_file = await generate_levelup_card(
                 member,
                 new_level,
-                max_level=100,
                 previous_level=max(1, new_level - 1),
             )
 

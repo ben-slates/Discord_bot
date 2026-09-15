@@ -172,6 +172,7 @@ class GuildConfig(Base):
     # Support
     support_enabled = Column(Boolean, default=False)
     support_category = Column(String, nullable=True)
+    support_admin_role = Column(String, nullable=True)
     # Security (antispam columns removed)
     # Notifications
     notification_channel = Column(String, nullable=True)
@@ -309,6 +310,9 @@ def ensure_database_columns():
     if "cve_and_news_channel" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN cve_and_news_channel VARCHAR"))
+    if "support_admin_role" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN support_admin_role VARCHAR"))
     if "verification_enabled" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN verification_enabled BOOLEAN DEFAULT FALSE"))

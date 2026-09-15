@@ -189,6 +189,13 @@ class CustomLBCog(commands.Cog):
         option: app_commands.Choice[str],
         channel: discord.abc.GuildChannel,
     ):
+        if option.value == "support":
+            if not isinstance(channel, discord.CategoryChannel):
+                await interaction.response.send_message("Support must be enabled with a category.", ephemeral=True)
+                return
+            from cogs.support import SupportRoleModal
+            await interaction.response.send_modal(SupportRoleModal(self.bot, channel))
+            return
         await interaction.response.defer(ephemeral=True)
         db = SessionLocal()
         try:
@@ -369,6 +376,7 @@ class CustomLBCog(commands.Cog):
             if option.value == "support":
                 config.support_enabled = False
                 config.support_category = None
+                config.support_admin_role = None
                 db.commit()
                 await interaction.followup.send("Support disabled.", ephemeral=True)
                 return
@@ -521,7 +529,7 @@ class CustomLBCog(commands.Cog):
                     card_file = await generate_levelup_card(
                         interaction.user,
                         100,
-                        max_level=100,
+                        max_level=None,
                         previous_level=99,
                     )
                     await channel.send(f"✅ Level-up announcement test for {interaction.user.mention}", file=card_file)

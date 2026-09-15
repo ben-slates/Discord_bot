@@ -144,7 +144,7 @@ def _draw_profile_panel(card: Image.Image, draw: ImageDraw.ImageDraw, username: 
               font=_fit_text(draw, username, bounds[2] - text_left - Spacing.MD - reserved_badge_width, 46, 16), fill=Typography.HEADING)
 
 
-def _draw_stat_row(card: Image.Image, level: int, xp: int, rank: int | None, max_level: int) -> bool:
+def _draw_stat_row(card: Image.Image, level: int, xp: int, rank: int | None, max_level: int | None) -> bool:
     row_width = RANK_CONTENT_RIGHT - RANK_CONTENT_LEFT
     stat_width = (row_width - RANK_STAT_GAP * 2) // 3
     stat_bounds = []
@@ -152,7 +152,7 @@ def _draw_stat_row(card: Image.Image, level: int, xp: int, rank: int | None, max
         left = RANK_CONTENT_LEFT + index * (stat_width + RANK_STAT_GAP)
         right = RANK_CONTENT_RIGHT if index == 2 else left + stat_width
         stat_bounds.append((left, RANK_STAT_ROW_Y, right, RANK_STAT_ROW_Y + RANK_STAT_HEIGHT))
-    is_max = level >= max_level
+    is_max = max_level is not None and level >= max_level
     _stat(card, stat_bounds[0], "Server Rank", f"#{rank}" if rank else "Unranked")
     _stat(card, stat_bounds[1], "Current Level", "MAX LEVEL" if is_max else f"Level {level}", CardTheme.GREEN if is_max else CardTheme.BLUE)
     _stat(card, stat_bounds[2], "Total XP", f"{xp:,}")
@@ -185,7 +185,7 @@ def _render_rank_card(avatar_bytes, username, profile_title, level, xp, rank, da
     draw = ImageDraw.Draw(card)
     draw_glass_panel(card, RANK_AVATAR_PANEL_BOUNDS, BorderRadius.PANEL, Glow.BLUE)
     _avatar(card, avatar_bytes, RANK_AVATAR_POSITION, RANK_AVATAR_SIZE, CardTheme.BLUE)
-    is_max = level >= max_level
+    is_max = max_level is not None and level >= max_level
     _draw_profile_panel(card, draw, username, profile_title, is_max)
     _draw_stat_row(card, level, xp, rank, max_level)
 
@@ -202,13 +202,13 @@ def _render_rank_card(avatar_bytes, username, profile_title, level, xp, rank, da
     return discord.File(output, filename="rankcard.png")
 
 
-async def generate_rank_card(member, level, xp, rank, daily_xp_earned, daily_xp_cap, max_level, profile_title="Community Profile"):
+async def generate_rank_card(member, level, xp, rank, daily_xp_earned, daily_xp_cap, max_level=None, profile_title="Community Profile"):
     return await asyncio.to_thread(_render_rank_card, await member.display_avatar.replace(size=256).read(), member.display_name, profile_title, level, xp, rank, daily_xp_earned, daily_xp_cap, max_level)
 
 
 def _render_levelup_card(avatar_bytes, username, previous_level, new_level, max_level):
     width, height = LEVELUP_CARD_SIZE
-    is_max = new_level >= max_level
+    is_max = max_level is not None and new_level >= max_level
     accent = SECTION_ACCENT
     card = _base_card(width, height, "Levelupcard_bg")
 
@@ -247,7 +247,7 @@ def _render_levelup_card(avatar_bytes, username, previous_level, new_level, max_
     return discord.File(output, filename="levelupcard.png")
 
 
-async def generate_levelup_card(member, level, xp=None, rank=None, max_level=100, previous_level=None):
+async def generate_levelup_card(member, level, xp=None, rank=None, max_level=None, previous_level=None):
     # xp/rank remain accepted for call-site compatibility; level-up cards deliberately do not show rank statistics.
     previous_level = previous_level if previous_level is not None else max(1, level - 1)
     return await asyncio.to_thread(_render_levelup_card, await member.display_avatar.replace(size=256).read(), member.display_name, previous_level, level, max_level)

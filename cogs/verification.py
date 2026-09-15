@@ -2,10 +2,11 @@
 
 import re
 import secrets
+import logging
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 from sqlalchemy.exc import IntegrityError
 
 from database import SessionLocal, GuildConfig, VerificationRecord
@@ -93,9 +94,82 @@ class VerificationEmailModal(discord.ui.Modal, title="Verify — Email"):
         await self.cog._register_email(interaction, self.email.value)
 
 
+class VerificationDashboardView(discord.ui.View):
+    """Persistent public dashboard used instead of requiring slash commands."""
+
+    def __init__(self, cog):
+        super().__init__(timeout=None)
+        self.cog = cog
+
+    @discord.ui.button(label="Verify", style=discord.ButtonStyle.primary, custom_id="verification_verify")
+    async def verify_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(VerificationEmailModal(self.cog))
+
+    @discord.ui.button(label="Check UUID", style=discord.ButtonStyle.secondary, custom_id="verification_check_uuid")
+    async def check_uuid_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.cog.check_uuid_interaction(interaction)
+
+
 class VerificationCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.dashboard_check.start()
+        self.bot.add_view(VerificationDashboardView(self))
+
+    def cog_unload(self):
+        self.dashboard_check.cancel()
+
+    @tasks.loop(minutes=1)
+    async def dashboard_check(self):
+        await self.bot.wait_until_ready()
+        try:
+            enabled_channels = await run_db(self._get_enabled_channel)
+        except Exception:
+            logging.exception("Could not load verification dashboard configuration")
+            return
+        for guild in self.bot.guilds:
+            channel_id = enabled_channels.get(guild.id)
+            if not channel_id:
+                continue
+            try:
+                channel = guild.get_channel(int(channel_id))
+            except (TypeError, ValueError):
+                logging.warning("Invalid verification channel %r for guild %s", channel_id, guild.id)
+                continue
+            if not isinstance(channel, discord.TextChannel):
+                continue
+            try:
+                found = False
+                async for message in channel.history(limit=100):
+                    if message.author == self.bot.user and message.embeds and message.embeds[0].title == "Verification Dashboard":
+                        found = True
+                        break
+                if not found:
+                    embed = discord.Embed(
+                        title="Verification Dashboard",
+                        description="Verify your account or view your existing Verification ID using the buttons below.",
+                        color=discord.Color.blurple(),
+                    )
+                    await channel.send(embed=embed, view=VerificationDashboardView(self))
+                    logging.info("Verification dashboard sent to channel %s in guild %s", channel.id, guild.id)
+            except discord.HTTPException:
+                logging.exception("Could not maintain verification dashboard in channel %s", channel.id)
+
+    @dashboard_check.before_loop
+    async def before_dashboard_check(self):
+        await self.bot.wait_until_ready()
+
+    @staticmethod
+    def _get_enabled_channel():
+        db = SessionLocal()
+        try:
+            rows = db.query(GuildConfig).filter(
+                GuildConfig.verification_enabled.is_(True),
+                GuildConfig.verification_channel.isnot(None),
+            ).all()
+            return {int(row.guild_id): str(row.verification_channel) for row in rows}
+        finally:
+            db.close()
 
     async def _configured_channel(self, interaction):
         if not interaction.guild_id or not interaction.channel:
@@ -128,19 +202,14 @@ class VerificationCog(commands.Cog):
             return
         if not created:
             await interaction.followup.send(
-                "You already have a permanent Verification ID. Use `/check-uuid` to view it.",
+                "You already have a permanent Verification ID. Use the **Check UUID** button to view it.",
                 ephemeral=True,
             )
             return
         message = f"Verification successful.\n\nYour Verification ID:\n`{verification_id}`\n\nKeep this ID safe. It is permanently assigned to your account."
         await interaction.followup.send(message, ephemeral=True)
 
-    @app_commands.command(name="verify", description="Register your email and receive a permanent verification ID")
-    async def verify(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(VerificationEmailModal(self))
-
-    @app_commands.command(name="check-uuid", description="Show your existing verification ID")
-    async def check_uuid(self, interaction: discord.Interaction):
+    async def check_uuid_interaction(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         if not await self._require_channel(interaction):
             return
@@ -148,7 +217,7 @@ class VerificationCog(commands.Cog):
         if verification_id:
             await interaction.followup.send(f"Your Verification ID:\n```{verification_id}```", ephemeral=True)
         else:
-            await interaction.followup.send("You are not registered yet. Use `/verify` and enter your email first.", ephemeral=True)
+            await interaction.followup.send("You are not registered yet. Use the **Verify** button and enter your email first.", ephemeral=True)
 
     @app_commands.command(name="verify-list", description="Admin: view verification records")
     @app_commands.default_permissions(administrator=True)

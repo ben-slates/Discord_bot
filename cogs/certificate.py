@@ -5,11 +5,12 @@ import re
 import shutil
 import subprocess
 import tempfile
+import logging
 from pathlib import Path
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from database import SessionLocal, GuildConfig, VerificationRecord
 from utils.db_executor import run_db
@@ -232,9 +233,82 @@ class CertificateTeamView(discord.ui.View):
         self.add_item(CertificateTeamSelect(cog, verification_id, name))
 
 
+class CertificateDashboardView(discord.ui.View):
+    """Persistent certificate actions shown in the configured channel."""
+
+    def __init__(self, cog):
+        super().__init__(timeout=None)
+        self.cog = cog
+
+    @discord.ui.button(label="Generate Certificate", style=discord.ButtonStyle.primary, custom_id="certificate_generate")
+    async def generate(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(CertificateUUIDModal(self.cog))
+
+    @discord.ui.button(label="Get Certificate", style=discord.ButtonStyle.secondary, custom_id="certificate_get")
+    async def get(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.cog.get_certificate_interaction(interaction)
+
+
 class CertificateCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.dashboard_check.start()
+        self.bot.add_view(CertificateDashboardView(self))
+
+    def cog_unload(self):
+        self.dashboard_check.cancel()
+
+    @staticmethod
+    def _get_enabled_channels():
+        db = SessionLocal()
+        try:
+            rows = db.query(GuildConfig).filter(
+                GuildConfig.certificate_enabled.is_(True),
+                GuildConfig.certificate_channel.isnot(None),
+            ).all()
+            return {int(row.guild_id): str(row.certificate_channel) for row in rows}
+        finally:
+            db.close()
+
+    @tasks.loop(minutes=1)
+    async def dashboard_check(self):
+        await self.bot.wait_until_ready()
+        try:
+            enabled_channels = await run_db(self._get_enabled_channels)
+        except Exception:
+            logging.exception("Could not load certificate dashboard configuration")
+            return
+        for guild in self.bot.guilds:
+            channel_id = enabled_channels.get(guild.id)
+            if not channel_id:
+                continue
+            try:
+                channel = guild.get_channel(int(channel_id))
+            except (TypeError, ValueError):
+                logging.warning("Invalid certificate channel %r for guild %s", channel_id, guild.id)
+                continue
+            if not isinstance(channel, discord.TextChannel):
+                continue
+            try:
+                found = False
+                async for message in channel.history(limit=100):
+                    if message.author == self.bot.user and message.embeds and message.embeds[0].title == "Certification Dashboard":
+                        found = True
+                        break
+                if not found:
+                    embed = discord.Embed(
+                        title="Certification Dashboard",
+                        description="Generate your certificate or retrieve an existing certificate using the buttons below.",
+                        color=discord.Color.gold(),
+                    )
+                    await channel.send(embed=embed, view=CertificateDashboardView(self))
+                    logging.info("Certificate dashboard sent to channel %s in guild %s", channel.id, guild.id)
+            except discord.HTTPException:
+                logging.exception("Could not maintain certificate dashboard in channel %s", channel.id)
+
+    @dashboard_check.before_loop
+    async def before_dashboard_check(self):
+        await self.bot.wait_until_ready()
 
     @app_commands.command(name="generate-certificate", description="Generate your private certificate")
     async def generate_certificate(self, interaction: discord.Interaction):
@@ -281,7 +355,7 @@ class CertificateCog(commands.Cog):
         certificate_path = _certificate_path(verification_id)
         if await asyncio.to_thread(certificate_path.is_file):
             await interaction.followup.send(
-                "You already generated your certificate. Use `/get-certificate` to get your certificate.",
+                "You already generated your certificate. Use the **Get Certificate** button to retrieve it.",
                 ephemeral=True,
             )
             return
@@ -294,7 +368,7 @@ class CertificateCog(commands.Cog):
             return
         if not saved:
             await interaction.followup.send(
-                "You already generated your certificate. Use `/get-certificate` to get your certificate.",
+                "You already generated your certificate. Use the **Get Certificate** button to retrieve it.",
                 ephemeral=True,
             )
             return
@@ -334,6 +408,9 @@ class CertificateCog(commands.Cog):
 
     @app_commands.command(name="get-certificate", description="Get your previously generated certificate")
     async def get_certificate(self, interaction: discord.Interaction):
+        await self.get_certificate_interaction(interaction)
+
+    async def get_certificate_interaction(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         certificate_config = await run_db(_certificate_config, interaction.guild_id)
         if not certificate_config:
@@ -348,7 +425,7 @@ class CertificateCog(commands.Cog):
             return
         certificate_path = _certificate_path(verification_id)
         if not await asyncio.to_thread(certificate_path.is_file):
-            await interaction.followup.send("You have not generated a certificate yet. Use `/generate-certificate`.", ephemeral=True)
+            await interaction.followup.send("You have not generated a certificate yet. Use the **Generate Certificate** button.", ephemeral=True)
             return
         await interaction.followup.send(
             "Here is your previously generated certificate.",
