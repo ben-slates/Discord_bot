@@ -13,8 +13,8 @@ from pathlib import Path
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / ".env")
 
-DEFAULT_USERNAME = "asfandyar.deb"
-DEFAULT_LEVEL = 30
+DEFAULT_USERNAME = "eleanor_rosewell"
+DEFAULT_LEVEL = 15
 
 
 def normalized(value: str | None) -> str:
