@@ -9,6 +9,7 @@ from discord import app_commands
 from database import SessionLocal, CustomLeaderboard, HallOfFameEntry, GuildConfig, UserData
 from utils.halloffame import render as render_halloffame
 from utils.leaderboard import get_leaderboard_channel_id
+from utils.db_executor import run_db
 
 load_dotenv()
 
@@ -343,6 +344,70 @@ def build_hall_of_fame_overall_content(department_key, department_name=None):
     return label, description
 
 
+def _enable_feature_worker(guild_id, option, channel_id):
+    db = SessionLocal()
+    try:
+        config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
+        if not config:
+            config = GuildConfig(guild_id=str(guild_id))
+            db.add(config)
+        fields = {
+            "bot_logs": ("bot_logs_enabled", "bot_logs_channel", "Bot logs"),
+            "cve_and_news": ("cve_and_news_enabled", "cve_and_news_channel", "CVE and News"),
+            "attendance": ("attendance_enabled", "attendance_channel", "Attendance"),
+            "welcome": ("welcome_enabled", "welcome_channel", "Welcome messages"),
+            "leaderboard": ("leaderboard_enabled", "leaderboard_channel", "Leaderboard"),
+            "level_up_announcements": ("level_up_announcements_enabled", "level_up_announcements_channel", "Level-up announcements"),
+            "verification": ("verification_enabled", "verification_channel", "Verification"),
+        }
+        entry = fields.get(option)
+        if not entry:
+            return None, "Unknown feature. Use one of the feature names shown in the panel."
+        enabled_field, channel_field, label = entry
+        setattr(config, enabled_field, True)
+        setattr(config, channel_field, str(channel_id))
+        db.commit()
+        return label, None
+    finally:
+        db.close()
+
+
+def _disable_feature_worker(guild_id, option):
+    db = SessionLocal()
+    try:
+        config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
+        if not config:
+            return None, "No feature configuration exists for this server."
+        fields = {
+            "bot_logs": ("bot_logs_enabled", "bot_logs_channel", "Bot logs"),
+            "cve_and_news": ("cve_and_news_enabled", "cve_and_news_channel", "CVE and News"),
+            "support": ("support_enabled", "support_category", "Support"),
+            "attendance": ("attendance_enabled", "attendance_channel", "Attendance"),
+            "welcome": ("welcome_enabled", "welcome_channel", "Welcome messages"),
+            "hall_of_fame": ("hall_of_fame_enabled", None, "Hall of Fame"),
+            "leaderboard": ("leaderboard_enabled", "leaderboard_channel", "Leaderboard"),
+            "level_up_announcements": ("level_up_announcements_enabled", "level_up_announcements_channel", "Level-up announcements"),
+            "verification": ("verification_enabled", "verification_channel", "Verification"),
+            "certificate": ("certificate_enabled", "certificate_channel", "Certificate generation"),
+        }
+        entry = fields.get(option)
+        if not entry:
+            return None, "Unknown feature. Use one of the feature names shown in the panel."
+        enabled_field, channel_field, label = entry
+        setattr(config, enabled_field, False)
+        if channel_field:
+            setattr(config, channel_field, None)
+        if option == "hall_of_fame":
+            config.hall_of_fame_channel = None
+            config.hall_of_fame_role_name = None
+            config.hall_of_fame_announcement_channel = None
+            config.hall_of_fame_warning_channel = None
+        db.commit()
+        return label, None
+    finally:
+        db.close()
+
+
 class CustomLBCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -356,7 +421,7 @@ class CustomLBCog(commands.Cog):
             description=(
                 "Use the buttons below to configure features.\n\n"
                 "**Enable Feature** — enable Bot Logs, CVE/News, Support, Attendance, Welcome, Leaderboard, "
-                "Level-Up Announcements, or Verification using a channel/category ID.\n"
+                "Level-Up Announcements, or Verification by selecting the feature and channel/category from lists.\n"
                 "**Disable Feature** — disable an enabled feature without changing unrelated settings.\n"
                 "**Enable Certification** — choose the required role and certificate channel.\n"
                 "**Enable Hall of Fame** — choose the role, announcement channel, and warning channel."
@@ -366,71 +431,18 @@ class CustomLBCog(commands.Cog):
         await interaction.response.send_message(embed=embed, view=SettingsPanelView(self), ephemeral=True)
 
     async def enable_feature_settings(self, interaction, option, channel):
-        db = SessionLocal()
-        try:
-            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
-            if not config:
-                config = GuildConfig(guild_id=str(interaction.guild_id))
-                db.add(config)
-            text_features = {
-                "bot_logs": ("bot_logs_enabled", "bot_logs_channel", "Bot logs"),
-                "cve_and_news": ("cve_and_news_enabled", "cve_and_news_channel", "CVE and News"),
-                "attendance": ("attendance_enabled", "attendance_channel", "Attendance"),
-                "welcome": ("welcome_enabled", "welcome_channel", "Welcome messages"),
-                "leaderboard": ("leaderboard_enabled", "leaderboard_channel", "Leaderboard"),
-                "level_up_announcements": ("level_up_announcements_enabled", "level_up_announcements_channel", "Level-up announcements"),
-                "verification": ("verification_enabled", "verification_channel", "Verification"),
-            }
-            if option not in text_features:
-                await interaction.followup.send("Unknown feature. Use one of the feature names shown in the panel.", ephemeral=True)
-                return
-            if not isinstance(channel, discord.TextChannel):
-                await interaction.followup.send("This feature requires a text channel.", ephemeral=True)
-                return
-            enabled_field, channel_field, label = text_features[option]
-            setattr(config, enabled_field, True)
-            setattr(config, channel_field, str(channel.id))
-            db.commit()
-            await interaction.followup.send(f"{label} enabled for {channel.mention}.", ephemeral=True)
-        finally:
-            db.close()
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.followup.send("This feature requires a text channel.", ephemeral=True)
+            return
+        label, error = await run_db(_enable_feature_worker, interaction.guild_id, option, channel.id)
+        if error:
+            await interaction.followup.send(error, ephemeral=True)
+            return
+        await interaction.followup.send(f"{label} enabled for {channel.mention}.", ephemeral=True)
 
     async def disable_feature_settings(self, interaction, option):
-        db = SessionLocal()
-        try:
-            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
-            if not config:
-                await interaction.followup.send("No feature configuration exists for this server.", ephemeral=True)
-                return
-            fields = {
-                "bot_logs": ("bot_logs_enabled", "bot_logs_channel", "Bot logs"),
-                "cve_and_news": ("cve_and_news_enabled", "cve_and_news_channel", "CVE and News"),
-                "support": ("support_enabled", "support_category", "Support"),
-                "attendance": ("attendance_enabled", "attendance_channel", "Attendance"),
-                "welcome": ("welcome_enabled", "welcome_channel", "Welcome messages"),
-                "hall_of_fame": ("hall_of_fame_enabled", None, "Hall of Fame"),
-                "leaderboard": ("leaderboard_enabled", "leaderboard_channel", "Leaderboard"),
-                "level_up_announcements": ("level_up_announcements_enabled", "level_up_announcements_channel", "Level-up announcements"),
-                "verification": ("verification_enabled", "verification_channel", "Verification"),
-                "certificate": ("certificate_enabled", "certificate_channel", "Certificate generation"),
-            }
-            entry = fields.get(option)
-            if not entry:
-                await interaction.followup.send("Unknown feature. Use one of the feature names shown in the panel.", ephemeral=True)
-                return
-            enabled_field, channel_field, label = entry
-            setattr(config, enabled_field, False)
-            if channel_field:
-                setattr(config, channel_field, None)
-            if option == "hall_of_fame":
-                config.hall_of_fame_channel = None
-                config.hall_of_fame_role_name = None
-                config.hall_of_fame_announcement_channel = None
-                config.hall_of_fame_warning_channel = None
-            db.commit()
-            await interaction.followup.send(f"{label} disabled.", ephemeral=True)
-        finally:
-            db.close()
+        label, error = await run_db(_disable_feature_worker, interaction.guild_id, option)
+        await interaction.followup.send(error or f"{label} disabled.", ephemeral=True)
 
     async def _require_leaderboard_channel(self, interaction: discord.Interaction, db):
         config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
@@ -610,6 +622,9 @@ class CustomLBCog(commands.Cog):
         announcement_channel: discord.TextChannel,
         warning_channel: discord.TextChannel,
     ):
+        # Acknowledge the modal submission before database work so Discord
+        # does not expire the interaction while configuration is being saved.
+        await interaction.response.defer(ephemeral=True)
         db = SessionLocal()
         try:
             config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
@@ -618,10 +633,10 @@ class CustomLBCog(commands.Cog):
                 db.add(config)
 
             if not isinstance(announcement_channel, discord.TextChannel):
-                await interaction.response.send_message("Announcement channel must be a text channel.", ephemeral=True)
+                await interaction.followup.send("Announcement channel must be a text channel.", ephemeral=True)
                 return
             if not isinstance(warning_channel, discord.TextChannel):
-                await interaction.response.send_message("Warning channel must be a text channel.", ephemeral=True)
+                await interaction.followup.send("Warning channel must be a text channel.", ephemeral=True)
                 return
 
             config.hall_of_fame_enabled = True
@@ -630,7 +645,7 @@ class CustomLBCog(commands.Cog):
             config.hall_of_fame_announcement_channel = str(announcement_channel.id)
             config.hall_of_fame_warning_channel = str(warning_channel.id)
             db.commit()
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"Hall of Fame enabled. Role: {config.hall_of_fame_role_name}",
                 ephemeral=True,
             )
