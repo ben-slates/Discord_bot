@@ -2,6 +2,7 @@ import os
 import asyncio
 import datetime
 import tempfile
+import logging
 import discord
 from dotenv import load_dotenv
 from discord.ext import commands
@@ -170,7 +171,22 @@ def _select_options(items, empty_label="No channels available"):
     return options or [discord.SelectOption(label=empty_label, value="0")]
 
 
-class FeatureEnableSelectView(discord.ui.View):
+class SettingsErrorView(discord.ui.View):
+    async def on_error(self, interaction, error, item):
+        logging.error(
+            "Settings panel interaction failed",
+            exc_info=(type(error), error, error.__traceback__),
+        )
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send("The settings action failed. Please try again.", ephemeral=True)
+            else:
+                await interaction.response.send_message("The settings action failed. Please try again.", ephemeral=True)
+        except discord.HTTPException:
+            pass
+
+
+class FeatureEnableSelectView(SettingsErrorView):
     def __init__(self, cog, guild):
         super().__init__(timeout=300)
         self.cog = cog
@@ -193,6 +209,13 @@ class FeatureEnableSelectView(discord.ui.View):
         )
         self.add_item(self.feature)
         self.add_item(self.channel)
+        self.feature.callback = self._selection_changed
+        self.channel.callback = self._selection_changed
+
+    async def _selection_changed(self, interaction):
+        # A select-menu choice is an interaction too; acknowledge it by
+        # editing the private menu message so Discord does not show a timeout.
+        await interaction.response.edit_message(view=self)
 
     @discord.ui.button(label="Apply", style=discord.ButtonStyle.success)
     async def apply(self, interaction, button):
@@ -212,7 +235,7 @@ class FeatureEnableSelectView(discord.ui.View):
         await self.cog.enable_feature_settings(interaction, feature, channel)
 
 
-class FeatureDisableSelectView(discord.ui.View):
+class FeatureDisableSelectView(SettingsErrorView):
     def __init__(self, cog):
         super().__init__(timeout=300)
         self.cog = cog
@@ -226,6 +249,10 @@ class FeatureDisableSelectView(discord.ui.View):
             ]],
         )
         self.add_item(self.feature)
+        self.feature.callback = self._selection_changed
+
+    async def _selection_changed(self, interaction):
+        await interaction.response.edit_message(view=self)
 
     @discord.ui.button(label="Disable Selected Feature", style=discord.ButtonStyle.danger)
     async def apply(self, interaction, button):
@@ -236,7 +263,7 @@ class FeatureDisableSelectView(discord.ui.View):
         await self.cog.disable_feature_settings(interaction, self.feature.values[0])
 
 
-class CertificationSelectView(discord.ui.View):
+class CertificationSelectView(SettingsErrorView):
     def __init__(self, cog, guild):
         super().__init__(timeout=300)
         self.cog = cog
@@ -244,6 +271,11 @@ class CertificationSelectView(discord.ui.View):
         self.channel = discord.ui.Select(placeholder="Select the certification channel", options=_select_options([c for c in guild.text_channels]))
         self.add_item(self.role)
         self.add_item(self.channel)
+        self.role.callback = self._selection_changed
+        self.channel.callback = self._selection_changed
+
+    async def _selection_changed(self, interaction):
+        await interaction.response.edit_message(view=self)
 
     @discord.ui.button(label="Enable Certification", style=discord.ButtonStyle.success)
     async def apply(self, interaction, button):
@@ -255,7 +287,7 @@ class CertificationSelectView(discord.ui.View):
         await self.cog.enable_certification(interaction, role, channel)
 
 
-class HallOfFameSelectView(discord.ui.View):
+class HallOfFameSelectView(SettingsErrorView):
     def __init__(self, cog, guild):
         super().__init__(timeout=300)
         self.cog = cog
@@ -266,6 +298,12 @@ class HallOfFameSelectView(discord.ui.View):
         self.add_item(self.role)
         self.add_item(self.announcement)
         self.add_item(self.warning)
+        self.role.callback = self._selection_changed
+        self.announcement.callback = self._selection_changed
+        self.warning.callback = self._selection_changed
+
+    async def _selection_changed(self, interaction):
+        await interaction.response.edit_message(view=self)
 
     @discord.ui.button(label="Enable Hall of Fame", style=discord.ButtonStyle.success)
     async def apply(self, interaction, button):
@@ -278,9 +316,11 @@ class HallOfFameSelectView(discord.ui.View):
         await self.cog.enable_hall_of_fame(interaction, role, announcement, warning)
 
 
-class SettingsPanelView(discord.ui.View):
+class SettingsPanelView(SettingsErrorView):
     def __init__(self, cog):
-        super().__init__(timeout=300)
+        # The panel is an ephemeral admin tool; keep its buttons active for
+        # the lifetime of the bot instead of silently expiring after 5 minutes.
+        super().__init__(timeout=None)
         self.cog = cog
 
     async def _admin(self, interaction):
@@ -292,22 +332,26 @@ class SettingsPanelView(discord.ui.View):
     @discord.ui.button(label="Enable Feature", style=discord.ButtonStyle.success)
     async def enable(self, interaction, button):
         if await self._admin(interaction):
-            await interaction.response.send_message("Select the feature and target channel/category:", view=FeatureEnableSelectView(self.cog, interaction.guild), ephemeral=True)
+            await interaction.response.defer(ephemeral=True)
+            await interaction.followup.send("Select the feature and target channel/category:", view=FeatureEnableSelectView(self.cog, interaction.guild), ephemeral=True)
 
     @discord.ui.button(label="Disable Feature", style=discord.ButtonStyle.danger)
     async def disable(self, interaction, button):
         if await self._admin(interaction):
-            await interaction.response.send_message("Select the feature to disable:", view=FeatureDisableSelectView(self.cog), ephemeral=True)
+            await interaction.response.defer(ephemeral=True)
+            await interaction.followup.send("Select the feature to disable:", view=FeatureDisableSelectView(self.cog), ephemeral=True)
 
     @discord.ui.button(label="Enable Certification", style=discord.ButtonStyle.primary)
     async def certification(self, interaction, button):
         if await self._admin(interaction):
-            await interaction.response.send_message("Select the required role and certification channel:", view=CertificationSelectView(self.cog, interaction.guild), ephemeral=True)
+            await interaction.response.defer(ephemeral=True)
+            await interaction.followup.send("Select the required role and certification channel:", view=CertificationSelectView(self.cog, interaction.guild), ephemeral=True)
 
     @discord.ui.button(label="Enable Hall of Fame", style=discord.ButtonStyle.primary)
     async def hall_of_fame(self, interaction, button):
         if await self._admin(interaction):
-            await interaction.response.send_message("Select the role, announcement channel, and warning channel:", view=HallOfFameSelectView(self.cog, interaction.guild), ephemeral=True)
+            await interaction.response.defer(ephemeral=True)
+            await interaction.followup.send("Select the role, announcement channel, and warning channel:", view=HallOfFameSelectView(self.cog, interaction.guild), ephemeral=True)
 
 
 def build_hall_of_fame_template(template_key, custom_name=None):
