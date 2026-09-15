@@ -62,6 +62,140 @@ HALL_OF_FAME_DEPARTMENTS = {
 }
 
 
+class FeatureEnableModal(discord.ui.Modal, title="Enable Feature"):
+    def __init__(self, cog):
+        super().__init__()
+        self.cog = cog
+        self.feature = discord.ui.TextInput(
+            label="Feature name",
+            placeholder="verification, support, attendance, leaderboard...",
+            required=True,
+            max_length=40,
+        )
+        self.channel_id = discord.ui.TextInput(
+            label="Channel/category ID",
+            placeholder="Paste the Discord channel or category ID",
+            required=True,
+            max_length=25,
+        )
+        self.add_item(self.feature)
+        self.add_item(self.channel_id)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        feature = self.feature.value.strip().lower().replace(" ", "_")
+        try:
+            channel = interaction.guild.get_channel(int(self.channel_id.value.strip()))
+        except (TypeError, ValueError):
+            channel = None
+        if not channel:
+            await interaction.response.send_message("I could not find that channel or category ID.", ephemeral=True)
+            return
+        if feature == "support":
+            from cogs.support import SupportRoleModal
+            if not isinstance(channel, discord.CategoryChannel):
+                await interaction.response.send_message("Support requires a category.", ephemeral=True)
+                return
+            await interaction.response.send_modal(SupportRoleModal(self.cog.bot, channel))
+            return
+        await interaction.response.defer(ephemeral=True)
+        await self.cog.enable_feature_settings(interaction, feature, channel)
+
+
+class FeatureDisableModal(discord.ui.Modal, title="Disable Feature"):
+    def __init__(self, cog):
+        super().__init__()
+        self.cog = cog
+        self.feature = discord.ui.TextInput(
+            label="Feature name",
+            placeholder="verification, support, attendance, certificate...",
+            required=True,
+            max_length=40,
+        )
+        self.add_item(self.feature)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        feature = self.feature.value.strip().lower().replace(" ", "_")
+        await self.cog.disable_feature_settings(interaction, feature)
+
+
+class CertificationSetupModal(discord.ui.Modal, title="Enable Certification"):
+    def __init__(self, cog):
+        super().__init__()
+        self.cog = cog
+        self.role_id = discord.ui.TextInput(label="Required role ID", required=True, max_length=25)
+        self.channel_id = discord.ui.TextInput(label="Certification channel ID", required=True, max_length=25)
+        self.add_item(self.role_id)
+        self.add_item(self.channel_id)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        role = interaction.guild.get_role(int(self.role_id.value.strip())) if self.role_id.value.strip().isdigit() else None
+        try:
+            channel = interaction.guild.get_channel(int(self.channel_id.value.strip()))
+        except (TypeError, ValueError):
+            channel = None
+        if not role or not isinstance(channel, discord.TextChannel):
+            await interaction.response.send_message("Enter a valid role ID and text-channel ID.", ephemeral=True)
+            return
+        await self.cog.enable_certification(interaction, role, channel)
+
+
+class HallOfFameSetupModal(discord.ui.Modal, title="Enable Hall of Fame"):
+    def __init__(self, cog):
+        super().__init__()
+        self.cog = cog
+        self.role_id = discord.ui.TextInput(label="Hall of Fame role ID", required=True, max_length=25)
+        self.announcement_id = discord.ui.TextInput(label="Announcement channel ID", required=True, max_length=25)
+        self.warning_id = discord.ui.TextInput(label="Warning channel ID", required=True, max_length=25)
+        self.add_item(self.role_id)
+        self.add_item(self.announcement_id)
+        self.add_item(self.warning_id)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        role = interaction.guild.get_role(int(self.role_id.value.strip())) if self.role_id.value.strip().isdigit() else None
+        try:
+            announcement = interaction.guild.get_channel(int(self.announcement_id.value.strip()))
+            warning = interaction.guild.get_channel(int(self.warning_id.value.strip()))
+        except (TypeError, ValueError):
+            announcement = warning = None
+        if not role or not isinstance(announcement, discord.TextChannel) or not isinstance(warning, discord.TextChannel):
+            await interaction.response.send_message("Enter a valid role ID and two text-channel IDs.", ephemeral=True)
+            return
+        await self.cog.enable_hall_of_fame(interaction, role, announcement, warning)
+
+
+class SettingsPanelView(discord.ui.View):
+    def __init__(self, cog):
+        super().__init__(timeout=300)
+        self.cog = cog
+
+    async def _admin(self, interaction):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("Only administrators can use the bot settings panel.", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="Enable Feature", style=discord.ButtonStyle.success)
+    async def enable(self, interaction, button):
+        if await self._admin(interaction):
+            await interaction.response.send_modal(FeatureEnableModal(self.cog))
+
+    @discord.ui.button(label="Disable Feature", style=discord.ButtonStyle.danger)
+    async def disable(self, interaction, button):
+        if await self._admin(interaction):
+            await interaction.response.send_modal(FeatureDisableModal(self.cog))
+
+    @discord.ui.button(label="Enable Certification", style=discord.ButtonStyle.primary)
+    async def certification(self, interaction, button):
+        if await self._admin(interaction):
+            await interaction.response.send_modal(CertificationSetupModal(self.cog))
+
+    @discord.ui.button(label="Enable Hall of Fame", style=discord.ButtonStyle.primary)
+    async def hall_of_fame(self, interaction, button):
+        if await self._admin(interaction):
+            await interaction.response.send_modal(HallOfFameSetupModal(self.cog))
+
+
 def build_hall_of_fame_template(template_key, custom_name=None):
     if template_key != "custom":
         return HALL_OF_FAME_TEMPLATES[template_key]
@@ -99,6 +233,91 @@ def build_hall_of_fame_overall_content(department_key, department_name=None):
 class CustomLBCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
+    @app_commands.command(name="setting", description="Admin: open the bot feature settings panel")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.checks.has_permissions(administrator=True)
+    async def setting(self, interaction: discord.Interaction):
+        embed = discord.Embed(
+            title="Bot Settings Panel",
+            description=(
+                "Use the buttons below to configure features.\n\n"
+                "**Enable Feature** — enable Bot Logs, CVE/News, Support, Attendance, Welcome, Leaderboard, "
+                "Level-Up Announcements, or Verification using a channel/category ID.\n"
+                "**Disable Feature** — disable an enabled feature without changing unrelated settings.\n"
+                "**Enable Certification** — choose the required role and certificate channel.\n"
+                "**Enable Hall of Fame** — choose the role, announcement channel, and warning channel."
+            ),
+            color=discord.Color.blurple(),
+        )
+        await interaction.response.send_message(embed=embed, view=SettingsPanelView(self), ephemeral=True)
+
+    async def enable_feature_settings(self, interaction, option, channel):
+        db = SessionLocal()
+        try:
+            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            if not config:
+                config = GuildConfig(guild_id=str(interaction.guild_id))
+                db.add(config)
+            text_features = {
+                "bot_logs": ("bot_logs_enabled", "bot_logs_channel", "Bot logs"),
+                "cve_and_news": ("cve_and_news_enabled", "cve_and_news_channel", "CVE and News"),
+                "attendance": ("attendance_enabled", "attendance_channel", "Attendance"),
+                "welcome": ("welcome_enabled", "welcome_channel", "Welcome messages"),
+                "leaderboard": ("leaderboard_enabled", "leaderboard_channel", "Leaderboard"),
+                "level_up_announcements": ("level_up_announcements_enabled", "level_up_announcements_channel", "Level-up announcements"),
+                "verification": ("verification_enabled", "verification_channel", "Verification"),
+            }
+            if option not in text_features:
+                await interaction.followup.send("Unknown feature. Use one of the feature names shown in the panel.", ephemeral=True)
+                return
+            if not isinstance(channel, discord.TextChannel):
+                await interaction.followup.send("This feature requires a text channel.", ephemeral=True)
+                return
+            enabled_field, channel_field, label = text_features[option]
+            setattr(config, enabled_field, True)
+            setattr(config, channel_field, str(channel.id))
+            db.commit()
+            await interaction.followup.send(f"{label} enabled for {channel.mention}.", ephemeral=True)
+        finally:
+            db.close()
+
+    async def disable_feature_settings(self, interaction, option):
+        db = SessionLocal()
+        try:
+            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            if not config:
+                await interaction.followup.send("No feature configuration exists for this server.", ephemeral=True)
+                return
+            fields = {
+                "bot_logs": ("bot_logs_enabled", "bot_logs_channel", "Bot logs"),
+                "cve_and_news": ("cve_and_news_enabled", "cve_and_news_channel", "CVE and News"),
+                "support": ("support_enabled", "support_category", "Support"),
+                "attendance": ("attendance_enabled", "attendance_channel", "Attendance"),
+                "welcome": ("welcome_enabled", "welcome_channel", "Welcome messages"),
+                "hall_of_fame": ("hall_of_fame_enabled", None, "Hall of Fame"),
+                "leaderboard": ("leaderboard_enabled", "leaderboard_channel", "Leaderboard"),
+                "level_up_announcements": ("level_up_announcements_enabled", "level_up_announcements_channel", "Level-up announcements"),
+                "verification": ("verification_enabled", "verification_channel", "Verification"),
+                "certificate": ("certificate_enabled", "certificate_channel", "Certificate generation"),
+            }
+            entry = fields.get(option)
+            if not entry:
+                await interaction.followup.send("Unknown feature. Use one of the feature names shown in the panel.", ephemeral=True)
+                return
+            enabled_field, channel_field, label = entry
+            setattr(config, enabled_field, False)
+            if channel_field:
+                setattr(config, channel_field, None)
+            if option == "hall_of_fame":
+                config.hall_of_fame_channel = None
+                config.hall_of_fame_role_name = None
+                config.hall_of_fame_announcement_channel = None
+                config.hall_of_fame_warning_channel = None
+            db.commit()
+            await interaction.followup.send(f"{label} disabled.", ephemeral=True)
+        finally:
+            db.close()
 
     async def _require_leaderboard_channel(self, interaction: discord.Interaction, db):
         config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
@@ -143,9 +362,6 @@ class CustomLBCog(commands.Cog):
         finally:
             db.close()
 
-    @app_commands.command(name="enable-certification", description="Admin:enable certificate generation for a role and channel")
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(role="Only members with this role may generate certificates", channel="Channel where certificates may be generated")
     async def enable_certification(self, interaction: discord.Interaction, role: discord.Role, channel: discord.TextChannel):
         await interaction.response.defer(ephemeral=True)
         db = SessionLocal()
@@ -165,24 +381,6 @@ class CustomLBCog(commands.Cog):
         finally:
             db.close()
 
-    @app_commands.command(name="enable", description="Admin:Enable a feature for this server")
-    @app_commands.choices(
-        option=[
-            app_commands.Choice(name="Bot Logs", value="bot_logs"),
-            app_commands.Choice(name="CVE and News", value="cve_and_news"),
-            app_commands.Choice(name="Support", value="support"),
-            app_commands.Choice(name="Attendance", value="attendance"),
-            app_commands.Choice(name="Welcome Messages", value="welcome"),
-            app_commands.Choice(name="Leaderboard", value="leaderboard"),
-            app_commands.Choice(name="Level Up Announcements", value="level_up_announcements"),
-            app_commands.Choice(name="Verification", value="verification"),
-        ]
-    )
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(
-        option="The feature to enable",
-        channel="The target channel or category for this feature",
-    )
     async def enable_feature(
         self,
         interaction: discord.Interaction,
@@ -255,7 +453,7 @@ class CustomLBCog(commands.Cog):
                 return
 
             if option.value == "hall_of_fame":
-                await interaction.followup.send("Use /enable_hall_of_fame for Hall of Fame setup.", ephemeral=True)
+                await interaction.followup.send("Use /setting and choose Enable Hall of Fame.", ephemeral=True)
                 return
 
             if option.value == "leaderboard":
@@ -292,13 +490,6 @@ class CustomLBCog(commands.Cog):
         finally:
             db.close()
 
-    @app_commands.command(name="enable_hall_of_fame", description="Admin:Enable Hall of Fame with a role and two channels")
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(
-        role_name="The role to use for Hall of Fame",
-        announcement_channel="The channel for Hall of Fame announcements",
-        warning_channel="The channel for Hall of Fame warning messages",
-    )
     async def enable_hall_of_fame(
         self,
         interaction: discord.Interaction,
@@ -333,23 +524,6 @@ class CustomLBCog(commands.Cog):
         finally:
             db.close()
 
-    @app_commands.command(name="disable", description="Admin:Disable a feature for this server")
-    @app_commands.choices(
-        option=[
-            app_commands.Choice(name="Bot Logs", value="bot_logs"),
-            app_commands.Choice(name="CVE and News", value="cve_and_news"),
-            app_commands.Choice(name="Support", value="support"),
-            app_commands.Choice(name="Attendance", value="attendance"),
-            app_commands.Choice(name="Welcome Messages", value="welcome"),
-            app_commands.Choice(name="Hall of Fame", value="hall_of_fame"),
-            app_commands.Choice(name="Leaderboard", value="leaderboard"),
-            app_commands.Choice(name="Level Up Announcements", value="level_up_announcements"),
-            app_commands.Choice(name="Verification", value="verification"),
-            app_commands.Choice(name="Certificate", value="certificate"),
-        ]
-    )
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(option="The feature to disable")
     async def disable_feature(self, interaction: discord.Interaction, option: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
         db = SessionLocal()
