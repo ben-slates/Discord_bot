@@ -310,7 +310,6 @@ class CertificateCog(commands.Cog):
     async def before_dashboard_check(self):
         await self.bot.wait_until_ready()
 
-    @app_commands.command(name="generate-certificate", description="Generate your private certificate")
     async def generate_certificate(self, interaction: discord.Interaction):
         await interaction.response.send_modal(CertificateUUIDModal(self))
 
@@ -406,7 +405,6 @@ class CertificateCog(commands.Cog):
             ephemeral=True,
         )
 
-    @app_commands.command(name="get-certificate", description="Get your previously generated certificate")
     async def get_certificate(self, interaction: discord.Interaction):
         await self.get_certificate_interaction(interaction)
 

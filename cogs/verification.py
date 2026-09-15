@@ -27,7 +27,7 @@ def _get_config(guild_id):
         db.close()
 
 
-def _create_or_get_record(user_id: int, email: str):
+def _create_or_get_record(user_id: int, email: str, name: str):
     db = SessionLocal()
     try:
         existing = db.query(VerificationRecord).filter_by(discord_user_id=int(user_id)).first()
@@ -40,6 +40,7 @@ def _create_or_get_record(user_id: int, email: str):
                 discord_user_id=int(user_id),
                 verification_id=verification_id,
                 email=email,
+                verification_name=name,
             )
             db.add(record)
             try:
@@ -77,21 +78,28 @@ def _list_records():
         db.close()
 
 
-class VerificationEmailModal(discord.ui.Modal, title="Verify — Email"):
+class VerificationEmailModal(discord.ui.Modal, title="Verify — Name & Email"):
     def __init__(self, cog):
         super().__init__()
         self.cog = cog
+        self.name = discord.ui.TextInput(
+            label="Your name",
+            placeholder="Full name",
+            required=True,
+            max_length=100,
+        )
         self.email = discord.ui.TextInput(
             label="Email address",
             placeholder="student@example.com",
             required=True,
             max_length=254,
         )
+        self.add_item(self.name)
         self.add_item(self.email)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        await self.cog._register_email(interaction, self.email.value)
+        await self.cog._register_email(interaction, self.email.value, self.name.value)
 
 
 class VerificationDashboardView(discord.ui.View):
@@ -188,15 +196,19 @@ class VerificationCog(commands.Cog):
         )
         return False
 
-    async def _register_email(self, interaction: discord.Interaction, email: str):
+    async def _register_email(self, interaction: discord.Interaction, email: str, name: str):
         if not await self._require_channel(interaction):
             return
         email = email.strip().lower()
+        name = " ".join(name.split())
+        if not name:
+            await interaction.followup.send("Please provide your name.", ephemeral=True)
+            return
         if not EMAIL_RE.fullmatch(email):
             await interaction.followup.send("Please provide a valid email address.", ephemeral=True)
             return
         try:
-            verification_id, created = await run_db(_create_or_get_record, interaction.user.id, email)
+            verification_id, created = await run_db(_create_or_get_record, interaction.user.id, email, name)
         except Exception:
             await interaction.followup.send("Verification could not be completed right now. Please try again.", ephemeral=True)
             return

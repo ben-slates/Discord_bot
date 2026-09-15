@@ -281,6 +281,7 @@ class VerificationRecord(Base):
     discord_user_id = Column(BigInteger, nullable=False, unique=True, index=True)
     verification_id = Column(String(10), nullable=False, unique=True, index=True)
     email = Column(String, nullable=False)
+    verification_name = Column(String, nullable=True)
     certificate_name = Column(String, nullable=True)
     certificate_team = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
@@ -329,6 +330,9 @@ def ensure_database_columns():
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN certificate_channel VARCHAR"))
     verification_columns = {column["name"] for column in inspector.get_columns("verification_records")}
+    if "verification_name" not in verification_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE verification_records ADD COLUMN verification_name VARCHAR"))
     if "certificate_name" not in verification_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE verification_records ADD COLUMN certificate_name VARCHAR"))

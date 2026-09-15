@@ -572,7 +572,6 @@ class SupportCog(commands.Cog):
         await interaction.channel.set_permissions(member, overwrite=None)
         await interaction.followup.send(f" Removed {member.mention} from the ticket.")
 
-    @app_commands.command(name="close", description="Close current ticket")
     async def close(self, interaction: discord.Interaction):
         await self.close_ticket_interaction(interaction)
 
@@ -658,7 +657,10 @@ class SupportCog(commands.Cog):
                 if owner:
                     await interaction.channel.set_permissions(owner, send_messages=True, read_messages=True)
                 
-            await interaction.followup.send(" Ticket reopened.")
+            await interaction.followup.send(
+                " Ticket reopened. Use the buttons below when you are ready.",
+                view=TicketSupportView(),
+            )
             
             import asyncio
             asyncio.create_task(interaction.channel.edit(name=interaction.channel.name.replace("closed-", "ticket-")))

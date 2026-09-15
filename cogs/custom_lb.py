@@ -164,6 +164,119 @@ class HallOfFameSetupModal(discord.ui.Modal, title="Enable Hall of Fame"):
         await self.cog.enable_hall_of_fame(interaction, role, announcement, warning)
 
 
+def _select_options(items, empty_label="No channels available"):
+    options = [discord.SelectOption(label=item.name[:100], value=str(item.id)) for item in items[:25]]
+    return options or [discord.SelectOption(label=empty_label, value="0")]
+
+
+class FeatureEnableSelectView(discord.ui.View):
+    def __init__(self, cog, guild):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.feature = discord.ui.Select(
+            placeholder="Select a feature to enable",
+            options=[
+                discord.SelectOption(label="Bot Logs", value="bot_logs"),
+                discord.SelectOption(label="CVE and News", value="cve_and_news"),
+                discord.SelectOption(label="Support", value="support"),
+                discord.SelectOption(label="Attendance", value="attendance"),
+                discord.SelectOption(label="Welcome Messages", value="welcome"),
+                discord.SelectOption(label="Leaderboard", value="leaderboard"),
+                discord.SelectOption(label="Level-Up Announcements", value="level_up_announcements"),
+                discord.SelectOption(label="Verification", value="verification"),
+            ],
+        )
+        self.channel = discord.ui.Select(
+            placeholder="Select the target channel/category",
+            options=_select_options([c for c in guild.channels if isinstance(c, (discord.TextChannel, discord.CategoryChannel))]),
+        )
+        self.add_item(self.feature)
+        self.add_item(self.channel)
+
+    @discord.ui.button(label="Apply", style=discord.ButtonStyle.success)
+    async def apply(self, interaction, button):
+        feature = self.feature.values[0] if self.feature.values else None
+        channel = interaction.guild.get_channel(int(self.channel.values[0])) if self.channel.values else None
+        if not feature or not channel:
+            await interaction.response.send_message("Select both a feature and a channel first.", ephemeral=True)
+            return
+        if feature == "support":
+            from cogs.support import SupportRoleModal
+            if not isinstance(channel, discord.CategoryChannel):
+                await interaction.response.send_message("Support requires a category.", ephemeral=True)
+                return
+            await interaction.response.send_modal(SupportRoleModal(self.cog.bot, channel))
+            return
+        await interaction.response.defer(ephemeral=True)
+        await self.cog.enable_feature_settings(interaction, feature, channel)
+
+
+class FeatureDisableSelectView(discord.ui.View):
+    def __init__(self, cog):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.feature = discord.ui.Select(
+            placeholder="Select a feature to disable",
+            options=[discord.SelectOption(label=label, value=value) for label, value in [
+                ("Bot Logs", "bot_logs"), ("CVE and News", "cve_and_news"), ("Support", "support"),
+                ("Attendance", "attendance"), ("Welcome Messages", "welcome"), ("Hall of Fame", "hall_of_fame"),
+                ("Leaderboard", "leaderboard"), ("Level-Up Announcements", "level_up_announcements"),
+                ("Verification", "verification"), ("Certificate", "certificate"),
+            ]],
+        )
+        self.add_item(self.feature)
+
+    @discord.ui.button(label="Disable Selected Feature", style=discord.ButtonStyle.danger)
+    async def apply(self, interaction, button):
+        if not self.feature.values:
+            await interaction.response.send_message("Select a feature first.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        await self.cog.disable_feature_settings(interaction, self.feature.values[0])
+
+
+class CertificationSelectView(discord.ui.View):
+    def __init__(self, cog, guild):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.role = discord.ui.Select(placeholder="Select the required role", options=_select_options([r for r in guild.roles if not r.is_default()], "No roles available"))
+        self.channel = discord.ui.Select(placeholder="Select the certification channel", options=_select_options([c for c in guild.text_channels]))
+        self.add_item(self.role)
+        self.add_item(self.channel)
+
+    @discord.ui.button(label="Enable Certification", style=discord.ButtonStyle.success)
+    async def apply(self, interaction, button):
+        role = interaction.guild.get_role(int(self.role.values[0])) if self.role.values else None
+        channel = interaction.guild.get_channel(int(self.channel.values[0])) if self.channel.values else None
+        if not role or not isinstance(channel, discord.TextChannel):
+            await interaction.response.send_message("Select a role and text channel first.", ephemeral=True)
+            return
+        await self.cog.enable_certification(interaction, role, channel)
+
+
+class HallOfFameSelectView(discord.ui.View):
+    def __init__(self, cog, guild):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.role = discord.ui.Select(placeholder="Select the Hall of Fame role", options=_select_options([r for r in guild.roles if not r.is_default()], "No roles available"))
+        channels = [c for c in guild.text_channels]
+        self.announcement = discord.ui.Select(placeholder="Select announcement channel", options=_select_options(channels))
+        self.warning = discord.ui.Select(placeholder="Select warning channel", options=_select_options(channels))
+        self.add_item(self.role)
+        self.add_item(self.announcement)
+        self.add_item(self.warning)
+
+    @discord.ui.button(label="Enable Hall of Fame", style=discord.ButtonStyle.success)
+    async def apply(self, interaction, button):
+        role = interaction.guild.get_role(int(self.role.values[0])) if self.role.values else None
+        announcement = interaction.guild.get_channel(int(self.announcement.values[0])) if self.announcement.values else None
+        warning = interaction.guild.get_channel(int(self.warning.values[0])) if self.warning.values else None
+        if not role or not isinstance(announcement, discord.TextChannel) or not isinstance(warning, discord.TextChannel):
+            await interaction.response.send_message("Select a role and both text channels first.", ephemeral=True)
+            return
+        await self.cog.enable_hall_of_fame(interaction, role, announcement, warning)
+
+
 class SettingsPanelView(discord.ui.View):
     def __init__(self, cog):
         super().__init__(timeout=300)
@@ -178,22 +291,22 @@ class SettingsPanelView(discord.ui.View):
     @discord.ui.button(label="Enable Feature", style=discord.ButtonStyle.success)
     async def enable(self, interaction, button):
         if await self._admin(interaction):
-            await interaction.response.send_modal(FeatureEnableModal(self.cog))
+            await interaction.response.send_message("Select the feature and target channel/category:", view=FeatureEnableSelectView(self.cog, interaction.guild), ephemeral=True)
 
     @discord.ui.button(label="Disable Feature", style=discord.ButtonStyle.danger)
     async def disable(self, interaction, button):
         if await self._admin(interaction):
-            await interaction.response.send_modal(FeatureDisableModal(self.cog))
+            await interaction.response.send_message("Select the feature to disable:", view=FeatureDisableSelectView(self.cog), ephemeral=True)
 
     @discord.ui.button(label="Enable Certification", style=discord.ButtonStyle.primary)
     async def certification(self, interaction, button):
         if await self._admin(interaction):
-            await interaction.response.send_modal(CertificationSetupModal(self.cog))
+            await interaction.response.send_message("Select the required role and certification channel:", view=CertificationSelectView(self.cog, interaction.guild), ephemeral=True)
 
     @discord.ui.button(label="Enable Hall of Fame", style=discord.ButtonStyle.primary)
     async def hall_of_fame(self, interaction, button):
         if await self._admin(interaction):
-            await interaction.response.send_modal(HallOfFameSetupModal(self.cog))
+            await interaction.response.send_message("Select the role, announcement channel, and warning channel:", view=HallOfFameSelectView(self.cog, interaction.guild), ephemeral=True)
 
 
 def build_hall_of_fame_template(template_key, custom_name=None):
