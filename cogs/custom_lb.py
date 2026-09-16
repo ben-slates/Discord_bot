@@ -171,6 +171,15 @@ def _select_options(items, empty_label="No channels available"):
     return options or [discord.SelectOption(label=empty_label, value="0")]
 
 
+def _resolve_selected_channel(guild: discord.Guild, selected):
+    """Convert a ChannelSelect interaction value to the cached guild channel.
+
+    discord.py may return an AppCommandChannel wrapper from a native channel
+    select. It has an ID but is not a TextChannel/CategoryChannel instance.
+    """
+    return guild.get_channel(int(selected.id)) if selected else None
+
+
 class SettingsErrorView(discord.ui.View):
     async def on_error(self, interaction, error, item):
         logging.error(
@@ -213,14 +222,15 @@ class FeatureEnableSelectView(SettingsErrorView):
         self.channel.callback = self._selection_changed
 
     async def _selection_changed(self, interaction):
-        # A select-menu choice is an interaction too; acknowledge it by
-        # editing the private menu message so Discord does not show a timeout.
-        await interaction.response.edit_message(view=self)
+        # A select-menu choice is its own Discord interaction. A defer is the
+        # fastest acknowledgement and remains reliable when Discord/API calls
+        # are slow; the selected value stays on this view for Apply.
+        await interaction.response.defer(ephemeral=True)
 
     @discord.ui.button(label="Apply", style=discord.ButtonStyle.success)
     async def apply(self, interaction, button):
         feature = self.feature.values[0] if self.feature.values else None
-        channel = self.channel.values[0] if self.channel.values else None
+        channel = _resolve_selected_channel(interaction.guild, self.channel.values[0] if self.channel.values else None)
         if not feature or not channel:
             await interaction.response.send_message("Select both a feature and a channel first.", ephemeral=True)
             return
@@ -252,7 +262,7 @@ class FeatureDisableSelectView(SettingsErrorView):
         self.feature.callback = self._selection_changed
 
     async def _selection_changed(self, interaction):
-        await interaction.response.edit_message(view=self)
+        await interaction.response.defer(ephemeral=True)
 
     @discord.ui.button(label="Disable Selected Feature", style=discord.ButtonStyle.danger)
     async def apply(self, interaction, button):
@@ -275,12 +285,12 @@ class CertificationSelectView(SettingsErrorView):
         self.channel.callback = self._selection_changed
 
     async def _selection_changed(self, interaction):
-        await interaction.response.edit_message(view=self)
+        await interaction.response.defer(ephemeral=True)
 
     @discord.ui.button(label="Enable Certification", style=discord.ButtonStyle.success)
     async def apply(self, interaction, button):
         role = self.role.values[0] if self.role.values else None
-        channel = self.channel.values[0] if self.channel.values else None
+        channel = _resolve_selected_channel(interaction.guild, self.channel.values[0] if self.channel.values else None)
         if not role or not isinstance(channel, discord.TextChannel):
             await interaction.response.send_message("Select a role and text channel first.", ephemeral=True)
             return
@@ -302,13 +312,13 @@ class HallOfFameSelectView(SettingsErrorView):
         self.warning.callback = self._selection_changed
 
     async def _selection_changed(self, interaction):
-        await interaction.response.edit_message(view=self)
+        await interaction.response.defer(ephemeral=True)
 
     @discord.ui.button(label="Enable Hall of Fame", style=discord.ButtonStyle.success)
     async def apply(self, interaction, button):
         role = self.role.values[0] if self.role.values else None
-        announcement = self.announcement.values[0] if self.announcement.values else None
-        warning = self.warning.values[0] if self.warning.values else None
+        announcement = _resolve_selected_channel(interaction.guild, self.announcement.values[0] if self.announcement.values else None)
+        warning = _resolve_selected_channel(interaction.guild, self.warning.values[0] if self.warning.values else None)
         if not role or not isinstance(announcement, discord.TextChannel) or not isinstance(warning, discord.TextChannel):
             await interaction.response.send_message("Select a role and both text channels first.", ephemeral=True)
             return
@@ -324,7 +334,7 @@ class MainLeaderboardRoleView(SettingsErrorView):
         self.role.callback = self._selection_changed
 
     async def _selection_changed(self, interaction):
-        await interaction.response.edit_message(view=self)
+        await interaction.response.defer(ephemeral=True)
 
     @discord.ui.button(label="Save Role", style=discord.ButtonStyle.success)
     async def save(self, interaction, button):
@@ -386,7 +396,7 @@ class CustomLeaderboardSetupView(SettingsErrorView):
         self.role.callback = self._selection_changed
 
     async def _selection_changed(self, interaction):
-        await interaction.response.edit_message(view=self)
+        await interaction.response.defer(ephemeral=True)
 
     @discord.ui.button(label="Continue", style=discord.ButtonStyle.success)
     async def continue_setup(self, interaction, button):
@@ -396,7 +406,7 @@ class CustomLeaderboardSetupView(SettingsErrorView):
         await interaction.response.send_modal(
             CustomLeaderboardNameModal(
                 self.cog,
-                self.channel.values[0],
+                _resolve_selected_channel(interaction.guild, self.channel.values[0]),
                 self.role.values[0] if self.role.values else None,
             )
         )
@@ -411,14 +421,17 @@ class CustomLeaderboardRemoveView(SettingsErrorView):
         self.channel.callback = self._selection_changed
 
     async def _selection_changed(self, interaction):
-        await interaction.response.edit_message(view=self)
+        await interaction.response.defer(ephemeral=True)
 
     @discord.ui.button(label="Remove Custom Leaderboard", style=discord.ButtonStyle.danger)
     async def remove(self, interaction, button):
         if not self.channel.values:
             await interaction.response.send_message("Select a text channel first.", ephemeral=True)
             return
-        channel = self.channel.values[0]
+        channel = _resolve_selected_channel(interaction.guild, self.channel.values[0])
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.response.send_message("Select a valid text channel first.", ephemeral=True)
+            return
         await interaction.response.defer(ephemeral=True)
         removed = await run_db(_remove_custom_leaderboard_worker, interaction.guild_id, channel.id)
         await interaction.followup.send(
