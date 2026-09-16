@@ -203,9 +203,9 @@ class FeatureEnableSelectView(SettingsErrorView):
                 discord.SelectOption(label="Verification", value="verification"),
             ],
         )
-        self.channel = discord.ui.Select(
+        self.channel = discord.ui.ChannelSelect(
             placeholder="Select the target channel/category",
-            options=_select_options([c for c in guild.channels if isinstance(c, (discord.TextChannel, discord.CategoryChannel))]),
+            channel_types=[discord.ChannelType.text, discord.ChannelType.category],
         )
         self.add_item(self.feature)
         self.add_item(self.channel)
@@ -220,7 +220,7 @@ class FeatureEnableSelectView(SettingsErrorView):
     @discord.ui.button(label="Apply", style=discord.ButtonStyle.success)
     async def apply(self, interaction, button):
         feature = self.feature.values[0] if self.feature.values else None
-        channel = interaction.guild.get_channel(int(self.channel.values[0])) if self.channel.values else None
+        channel = self.channel.values[0] if self.channel.values else None
         if not feature or not channel:
             await interaction.response.send_message("Select both a feature and a channel first.", ephemeral=True)
             return
@@ -267,8 +267,8 @@ class CertificationSelectView(SettingsErrorView):
     def __init__(self, cog, guild):
         super().__init__(timeout=300)
         self.cog = cog
-        self.role = discord.ui.Select(placeholder="Select the required role", options=_select_options([r for r in guild.roles if not r.is_default()], "No roles available"))
-        self.channel = discord.ui.Select(placeholder="Select the certification channel", options=_select_options([c for c in guild.text_channels]))
+        self.role = discord.ui.RoleSelect(placeholder="Select the required role")
+        self.channel = discord.ui.ChannelSelect(placeholder="Select the certification channel", channel_types=[discord.ChannelType.text])
         self.add_item(self.role)
         self.add_item(self.channel)
         self.role.callback = self._selection_changed
@@ -279,8 +279,8 @@ class CertificationSelectView(SettingsErrorView):
 
     @discord.ui.button(label="Enable Certification", style=discord.ButtonStyle.success)
     async def apply(self, interaction, button):
-        role = interaction.guild.get_role(int(self.role.values[0])) if self.role.values else None
-        channel = interaction.guild.get_channel(int(self.channel.values[0])) if self.channel.values else None
+        role = self.role.values[0] if self.role.values else None
+        channel = self.channel.values[0] if self.channel.values else None
         if not role or not isinstance(channel, discord.TextChannel):
             await interaction.response.send_message("Select a role and text channel first.", ephemeral=True)
             return
@@ -291,10 +291,9 @@ class HallOfFameSelectView(SettingsErrorView):
     def __init__(self, cog, guild):
         super().__init__(timeout=300)
         self.cog = cog
-        self.role = discord.ui.Select(placeholder="Select the Hall of Fame role", options=_select_options([r for r in guild.roles if not r.is_default()], "No roles available"))
-        channels = [c for c in guild.text_channels]
-        self.announcement = discord.ui.Select(placeholder="Select announcement channel", options=_select_options(channels))
-        self.warning = discord.ui.Select(placeholder="Select warning channel", options=_select_options(channels))
+        self.role = discord.ui.RoleSelect(placeholder="Select the Hall of Fame role")
+        self.announcement = discord.ui.ChannelSelect(placeholder="Select announcement channel", channel_types=[discord.ChannelType.text])
+        self.warning = discord.ui.ChannelSelect(placeholder="Select warning channel", channel_types=[discord.ChannelType.text])
         self.add_item(self.role)
         self.add_item(self.announcement)
         self.add_item(self.warning)
@@ -307,13 +306,143 @@ class HallOfFameSelectView(SettingsErrorView):
 
     @discord.ui.button(label="Enable Hall of Fame", style=discord.ButtonStyle.success)
     async def apply(self, interaction, button):
-        role = interaction.guild.get_role(int(self.role.values[0])) if self.role.values else None
-        announcement = interaction.guild.get_channel(int(self.announcement.values[0])) if self.announcement.values else None
-        warning = interaction.guild.get_channel(int(self.warning.values[0])) if self.warning.values else None
+        role = self.role.values[0] if self.role.values else None
+        announcement = self.announcement.values[0] if self.announcement.values else None
+        warning = self.warning.values[0] if self.warning.values else None
         if not role or not isinstance(announcement, discord.TextChannel) or not isinstance(warning, discord.TextChannel):
             await interaction.response.send_message("Select a role and both text channels first.", ephemeral=True)
             return
         await self.cog.enable_hall_of_fame(interaction, role, announcement, warning)
+
+
+class MainLeaderboardRoleView(SettingsErrorView):
+    def __init__(self, cog):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.role = discord.ui.RoleSelect(placeholder="Select the main leaderboard role")
+        self.add_item(self.role)
+        self.role.callback = self._selection_changed
+
+    async def _selection_changed(self, interaction):
+        await interaction.response.edit_message(view=self)
+
+    @discord.ui.button(label="Save Role", style=discord.ButtonStyle.success)
+    async def save(self, interaction, button):
+        if not self.role.values:
+            await interaction.response.send_message("Select a role first.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        saved = await run_db(_set_main_leaderboard_role_worker, interaction.guild_id, self.role.values[0].id)
+        if not saved:
+            await interaction.followup.send("Enable the main leaderboard before setting its qualifying role.", ephemeral=True)
+            return
+        await interaction.followup.send(f"Main leaderboard role updated to {self.role.values[0].mention}.", ephemeral=True)
+
+    @discord.ui.button(label="Clear Role", style=discord.ButtonStyle.secondary)
+    async def clear(self, interaction, button):
+        await interaction.response.defer(ephemeral=True)
+        saved = await run_db(_set_main_leaderboard_role_worker, interaction.guild_id, None)
+        await interaction.followup.send(
+            "Main leaderboard role cleared." if saved else "Enable the main leaderboard before changing its qualifying role.",
+            ephemeral=True,
+        )
+
+
+class CustomLeaderboardNameModal(discord.ui.Modal, title="Custom Leaderboard Name"):
+    def __init__(self, cog, channel, role):
+        super().__init__()
+        self.cog = cog
+        self.channel = channel
+        self.role = role
+        self.name = discord.ui.TextInput(label="Leaderboard name", placeholder="e.g. Blue Team Daily", required=True, max_length=100)
+        self.add_item(self.name)
+
+    async def on_submit(self, interaction):
+        name = self.name.value.strip()
+        if not name:
+            await interaction.response.send_message("Enter a leaderboard name.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        await run_db(
+            _upsert_custom_leaderboard_worker,
+            interaction.guild_id,
+            self.channel.id,
+            name,
+            self.role.id if self.role else None,
+        )
+        scope = f"members with {self.role.mention}" if self.role else "all members"
+        await interaction.followup.send(f"Custom leaderboard **{name}** saved for {self.channel.mention} ({scope}).", ephemeral=True)
+
+
+class CustomLeaderboardSetupView(SettingsErrorView):
+    def __init__(self, cog):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.channel = discord.ui.ChannelSelect(placeholder="Select the leaderboard channel", channel_types=[discord.ChannelType.text])
+        self.role = discord.ui.RoleSelect(placeholder="Optional: select a qualifying role")
+        self.add_item(self.channel)
+        self.add_item(self.role)
+        self.channel.callback = self._selection_changed
+        self.role.callback = self._selection_changed
+
+    async def _selection_changed(self, interaction):
+        await interaction.response.edit_message(view=self)
+
+    @discord.ui.button(label="Continue", style=discord.ButtonStyle.success)
+    async def continue_setup(self, interaction, button):
+        if not self.channel.values:
+            await interaction.response.send_message("Select a text channel first.", ephemeral=True)
+            return
+        await interaction.response.send_modal(
+            CustomLeaderboardNameModal(
+                self.cog,
+                self.channel.values[0],
+                self.role.values[0] if self.role.values else None,
+            )
+        )
+
+
+class CustomLeaderboardRemoveView(SettingsErrorView):
+    def __init__(self, cog):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.channel = discord.ui.ChannelSelect(placeholder="Select the custom leaderboard channel", channel_types=[discord.ChannelType.text])
+        self.add_item(self.channel)
+        self.channel.callback = self._selection_changed
+
+    async def _selection_changed(self, interaction):
+        await interaction.response.edit_message(view=self)
+
+    @discord.ui.button(label="Remove Custom Leaderboard", style=discord.ButtonStyle.danger)
+    async def remove(self, interaction, button):
+        if not self.channel.values:
+            await interaction.response.send_message("Select a text channel first.", ephemeral=True)
+            return
+        channel = self.channel.values[0]
+        await interaction.response.defer(ephemeral=True)
+        removed = await run_db(_remove_custom_leaderboard_worker, interaction.guild_id, channel.id)
+        await interaction.followup.send(
+            f"Custom leaderboard removed from {channel.mention}." if removed else f"No custom leaderboard is configured for {channel.mention}.",
+            ephemeral=True,
+        )
+
+
+class LeaderboardSettingsView(SettingsErrorView):
+    def __init__(self, cog):
+        super().__init__(timeout=300)
+        self.cog = cog
+
+    @discord.ui.button(label="Set Main Leaderboard Role", style=discord.ButtonStyle.primary)
+    async def set_main_role(self, interaction, button):
+        await interaction.response.send_message("Select the one role that qualifies for the main leaderboard:", view=MainLeaderboardRoleView(self.cog), ephemeral=True)
+
+    @discord.ui.button(label="Add Custom Leaderboard", style=discord.ButtonStyle.success)
+    async def add_custom(self, interaction, button):
+        await interaction.response.send_message("Select a channel and, optionally, a qualifying role:", view=CustomLeaderboardSetupView(self.cog), ephemeral=True)
+
+    @discord.ui.button(label="Remove Custom Leaderboard", style=discord.ButtonStyle.danger)
+    async def remove_custom(self, interaction, button):
+        await interaction.response.send_message("Select the custom leaderboard channel to remove:", view=CustomLeaderboardRemoveView(self.cog), ephemeral=True)
 
 
 class SettingsPanelView(SettingsErrorView):
@@ -352,6 +481,15 @@ class SettingsPanelView(SettingsErrorView):
         if await self._admin(interaction):
             await interaction.response.defer(ephemeral=True)
             await interaction.followup.send("Select the role, announcement channel, and warning channel:", view=HallOfFameSelectView(self.cog, interaction.guild), ephemeral=True)
+
+    @discord.ui.button(label="Leaderboard Settings", style=discord.ButtonStyle.secondary)
+    async def leaderboard_settings(self, interaction, button):
+        if await self._admin(interaction):
+            await interaction.response.send_message(
+                "Configure the main qualifying role or add/remove custom leaderboards:",
+                view=LeaderboardSettingsView(self.cog),
+                ephemeral=True,
+            )
 
 
 def build_hall_of_fame_template(template_key, custom_name=None):
@@ -452,6 +590,49 @@ def _disable_feature_worker(guild_id, option):
         db.close()
 
 
+def _set_main_leaderboard_role_worker(guild_id, role_id):
+    db = SessionLocal()
+    try:
+        config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
+        if not config or not get_leaderboard_channel_id(config):
+            return False
+        config.main_leaderboard_role_ids = str(role_id) if role_id else None
+        db.commit()
+        return True
+    finally:
+        db.close()
+
+
+def _upsert_custom_leaderboard_worker(guild_id, channel_id, name, role_id):
+    db = SessionLocal()
+    try:
+        lb = db.query(CustomLeaderboard).filter_by(channel_id=str(channel_id)).first()
+        if not lb:
+            lb = CustomLeaderboard(channel_id=str(channel_id), guild_id=str(guild_id), name=name)
+            db.add(lb)
+        else:
+            lb.name = name
+        lb.required_role_id = str(role_id) if role_id else None
+        db.commit()
+    finally:
+        db.close()
+
+
+def _remove_custom_leaderboard_worker(guild_id, channel_id):
+    db = SessionLocal()
+    try:
+        lb = db.query(CustomLeaderboard).filter_by(
+            guild_id=str(guild_id), channel_id=str(channel_id)
+        ).first()
+        if not lb:
+            return False
+        db.delete(lb)
+        db.commit()
+        return True
+    finally:
+        db.close()
+
+
 class CustomLBCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -468,7 +649,8 @@ class CustomLBCog(commands.Cog):
                 "Level-Up Announcements, or Verification by selecting the feature and channel/category from lists.\n"
                 "**Disable Feature** — disable an enabled feature without changing unrelated settings.\n"
                 "**Enable Certification** — choose the required role and certificate channel.\n"
-                "**Enable Hall of Fame** — choose the role, announcement channel, and warning channel."
+                "**Enable Hall of Fame** — choose the role, announcement channel, and warning channel.\n"
+                "**Leaderboard Settings** — set the main qualifying role or add/remove custom leaderboards."
             ),
             color=discord.Color.blurple(),
         )
@@ -506,9 +688,6 @@ class CustomLBCog(commands.Cog):
 
         return config
 
-    @app_commands.command(name="set_leaderboard", description="Admin:Set one role that qualifies for the main leaderboard")
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(role="The single role that should qualify for the main leaderboard")
     async def set_leaderboard(self, interaction: discord.Interaction, role: discord.Role = None):
         db = SessionLocal()
         try:
@@ -893,13 +1072,6 @@ class CustomLBCog(commands.Cog):
         finally:
             db.close()
 
-    @app_commands.command(name="add_custom_leaderboard", description="Admin:Add a custom daily leaderboard to a channel")
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(
-        channel="The channel where the leaderboard should appear",
-        name="The display name for the custom leaderboard",
-        role="Optional role that members must have to qualify for this leaderboard",
-    )
     async def add_custom_leaderboard(self, interaction: discord.Interaction, channel: discord.TextChannel, name: str, role: discord.Role = None):
         db = SessionLocal()
         try:
@@ -930,8 +1102,6 @@ class CustomLBCog(commands.Cog):
         finally:
             db.close()
 
-    @app_commands.command(name="remove_custom_leaderboard", description="Admin:Remove a custom leaderboard from a channel")
-    @app_commands.default_permissions(administrator=True)
     async def remove_custom_leaderboard(self, interaction: discord.Interaction, channel: discord.TextChannel):
         db = SessionLocal()
         try:
