@@ -190,6 +190,9 @@ class GuildConfig(Base):
     # CVE and news
     cve_and_news_enabled = Column(Boolean, default=False)
     cve_and_news_channel = Column(String, nullable=True)
+    # Quote of the Day
+    quote_of_day_enabled = Column(Boolean, default=False)
+    quote_of_day_channel = Column(String, nullable=True)
     # Verification
     verification_enabled = Column(Boolean, default=False)
     verification_channel = Column(String, nullable=True)
@@ -311,6 +314,12 @@ def ensure_database_columns():
     if "cve_and_news_channel" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN cve_and_news_channel VARCHAR"))
+    if "quote_of_day_enabled" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN quote_of_day_enabled BOOLEAN DEFAULT FALSE"))
+    if "quote_of_day_channel" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN quote_of_day_channel VARCHAR"))
     if "support_admin_role" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN support_admin_role VARCHAR"))

@@ -204,6 +204,7 @@ class FeatureEnableSelectView(SettingsErrorView):
             options=[
                 discord.SelectOption(label="Bot Logs", value="bot_logs"),
                 discord.SelectOption(label="CVE and News", value="cve_and_news"),
+                discord.SelectOption(label="Quote of the Day", value="quote_of_day"),
                 discord.SelectOption(label="Support", value="support"),
                 discord.SelectOption(label="Attendance", value="attendance"),
                 discord.SelectOption(label="Welcome Messages", value="welcome"),
@@ -252,7 +253,7 @@ class FeatureDisableSelectView(SettingsErrorView):
         self.feature = discord.ui.Select(
             placeholder="Select a feature to disable",
             options=[discord.SelectOption(label=label, value=value) for label, value in [
-                ("Bot Logs", "bot_logs"), ("CVE and News", "cve_and_news"), ("Support", "support"),
+                ("Bot Logs", "bot_logs"), ("CVE and News", "cve_and_news"), ("Quote of the Day", "quote_of_day"), ("Support", "support"),
                 ("Attendance", "attendance"), ("Welcome Messages", "welcome"), ("Hall of Fame", "hall_of_fame"),
                 ("Leaderboard", "leaderboard"), ("Level-Up Announcements", "level_up_announcements"),
                 ("Verification", "verification"), ("Certificate", "certificate"),
@@ -458,6 +459,35 @@ class LeaderboardSettingsView(SettingsErrorView):
         await interaction.response.send_message("Select the custom leaderboard channel to remove:", view=CustomLeaderboardRemoveView(self.cog), ephemeral=True)
 
 
+class FeatureTestView(SettingsErrorView):
+    def __init__(self, cog):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.feature = discord.ui.Select(
+            placeholder="Select an enabled feature to test",
+            options=[
+                discord.SelectOption(label="Bot Logs", value="bot_logs"),
+                discord.SelectOption(label="CVE and News", value="cve_and_news"),
+                discord.SelectOption(label="Leaderboard", value="leaderboard"),
+                discord.SelectOption(label="Level-Up Announcements", value="level_up_announcements"),
+                discord.SelectOption(label="Quote of the Day", value="quote_of_day"),
+            ],
+        )
+        self.add_item(self.feature)
+        self.feature.callback = self._selected
+
+    async def _selected(self, interaction):
+        await interaction.response.defer(ephemeral=True)
+
+    @discord.ui.button(label="Run Test", style=discord.ButtonStyle.success)
+    async def run_test(self, interaction, button):
+        if not self.feature.values:
+            await interaction.response.send_message("Select a feature first.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        await self.cog.test_feature_settings(interaction, self.feature.values[0])
+
+
 class SettingsPanelView(SettingsErrorView):
     def __init__(self, cog):
         # The panel is an ephemeral admin tool; keep its buttons active for
@@ -501,6 +531,15 @@ class SettingsPanelView(SettingsErrorView):
             await interaction.response.send_message(
                 "Configure the main qualifying role or add/remove custom leaderboards:",
                 view=LeaderboardSettingsView(self.cog),
+                ephemeral=True,
+            )
+
+    @discord.ui.button(label="Test Feature", style=discord.ButtonStyle.secondary)
+    async def test_feature(self, interaction, button):
+        if await self._admin(interaction):
+            await interaction.response.send_message(
+                "Select an enabled feature to send its test message:",
+                view=FeatureTestView(self.cog),
                 ephemeral=True,
             )
 
@@ -549,6 +588,7 @@ def _enable_feature_worker(guild_id, option, channel_id):
         fields = {
             "bot_logs": ("bot_logs_enabled", "bot_logs_channel", "Bot logs"),
             "cve_and_news": ("cve_and_news_enabled", "cve_and_news_channel", "CVE and News"),
+            "quote_of_day": ("quote_of_day_enabled", "quote_of_day_channel", "Quote of the Day"),
             "attendance": ("attendance_enabled", "attendance_channel", "Attendance"),
             "welcome": ("welcome_enabled", "welcome_channel", "Welcome messages"),
             "leaderboard": ("leaderboard_enabled", "leaderboard_channel", "Leaderboard"),
@@ -576,6 +616,7 @@ def _disable_feature_worker(guild_id, option):
         fields = {
             "bot_logs": ("bot_logs_enabled", "bot_logs_channel", "Bot logs"),
             "cve_and_news": ("cve_and_news_enabled", "cve_and_news_channel", "CVE and News"),
+            "quote_of_day": ("quote_of_day_enabled", "quote_of_day_channel", "Quote of the Day"),
             "support": ("support_enabled", "support_category", "Support"),
             "attendance": ("attendance_enabled", "attendance_channel", "Attendance"),
             "welcome": ("welcome_enabled", "welcome_channel", "Welcome messages"),
@@ -646,6 +687,28 @@ def _remove_custom_leaderboard_worker(guild_id, channel_id):
         db.close()
 
 
+def _feature_test_config_worker(guild_id, option):
+    db = SessionLocal()
+    try:
+        config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
+        fields = {
+            "bot_logs": ("bot_logs_enabled", "bot_logs_channel", "Bot logs"),
+            "cve_and_news": ("cve_and_news_enabled", "cve_and_news_channel", "CVE and News"),
+            "leaderboard": ("leaderboard_enabled", "leaderboard_channel", "Leaderboard"),
+            "level_up_announcements": ("level_up_announcements_enabled", "level_up_announcements_channel", "Level-up announcements"),
+            "quote_of_day": ("quote_of_day_enabled", "quote_of_day_channel", "Quote of the Day"),
+        }
+        entry = fields.get(option)
+        if not entry:
+            return None
+        enabled_field, channel_field, label = entry
+        if not config or not getattr(config, enabled_field) or not getattr(config, channel_field):
+            return label, None
+        return label, str(getattr(config, channel_field))
+    finally:
+        db.close()
+
+
 class CustomLBCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -658,7 +721,7 @@ class CustomLBCog(commands.Cog):
             title="Bot Settings Panel",
             description=(
                 "Use the buttons below to configure features.\n\n"
-                "**Enable Feature** — enable Bot Logs, CVE/News, Support, Attendance, Welcome, Leaderboard, "
+                "**Enable Feature** — enable Bot Logs, CVE/News, Quote of the Day, Support, Attendance, Welcome, Leaderboard, "
                 "Level-Up Announcements, or Verification by selecting the feature and channel/category from lists.\n"
                 "**Disable Feature** — disable an enabled feature without changing unrelated settings.\n"
                 "**Enable Certification** — choose the required role and certificate channel.\n"
@@ -677,11 +740,57 @@ class CustomLBCog(commands.Cog):
         if error:
             await interaction.followup.send(error, ephemeral=True)
             return
+        if option == "attendance":
+            attendance_cog = self.bot.get_cog("AttendanceCog")
+            if attendance_cog:
+                try:
+                    await attendance_cog.ensure_dashboard(interaction.guild, channel.id)
+                except Exception:
+                    logging.exception("Attendance enabled but dashboard creation failed for guild %s", interaction.guild_id)
         await interaction.followup.send(f"{label} enabled for {channel.mention}.", ephemeral=True)
 
     async def disable_feature_settings(self, interaction, option):
         label, error = await run_db(_disable_feature_worker, interaction.guild_id, option)
         await interaction.followup.send(error or f"{label} disabled.", ephemeral=True)
+
+    async def test_feature_settings(self, interaction, option):
+        result = await run_db(_feature_test_config_worker, interaction.guild_id, option)
+        if not result:
+            await interaction.followup.send("That feature cannot be tested from this panel.", ephemeral=True)
+            return
+        label, channel_id = result
+        if not channel_id:
+            await interaction.followup.send(f"{label} is not enabled for this server yet.", ephemeral=True)
+            return
+        channel = interaction.guild.get_channel(int(channel_id))
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.followup.send(f"The configured {label} channel could not be found.", ephemeral=True)
+            return
+        try:
+            if option == "level_up_announcements":
+                import sys
+                sys.path.append(os.path.join(os.path.dirname(__file__), "..", "utils"))
+                from rankcard import generate_levelup_card  # type: ignore
+                card_file = await generate_levelup_card(interaction.user, 100, max_level=None, previous_level=99)
+                await channel.send(f"✅ Level-up announcement test for {interaction.user.mention}", file=card_file)
+            elif option == "quote_of_day":
+                embed = discord.Embed(
+                    title="Quote of the Day",
+                    description="“The best way to predict the future is to invent it.”",
+                    color=discord.Color.teal(),
+                )
+                embed.set_footer(text="Alan Kay")
+                await channel.send(embed=embed)
+            else:
+                await channel.send(f"✅ {label} test message from {interaction.user.mention}")
+        except discord.Forbidden:
+            await interaction.followup.send(f"I do not have permission to send messages in {channel.mention}.", ephemeral=True)
+            return
+        except discord.HTTPException:
+            logging.exception("Failed to send %s test to channel %s", label, channel.id)
+            await interaction.followup.send(f"Could not send the {label} test message.", ephemeral=True)
+            return
+        await interaction.followup.send(f"{label} test sent to {channel.mention}.", ephemeral=True)
 
     async def _require_leaderboard_channel(self, interaction: discord.Interaction, db):
         config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
@@ -976,17 +1085,6 @@ class CustomLBCog(commands.Cog):
         finally:
             db.close()
 
-    @app_commands.command(name="test", description="Admin:Send a test message to verify an enabled feature")
-    @app_commands.choices(
-        option=[
-            app_commands.Choice(name="Bot Logs", value="bot_logs"),
-            app_commands.Choice(name="CVE and News", value="cve_and_news"),
-            app_commands.Choice(name="Leaderboard", value="leaderboard"),
-            app_commands.Choice(name="Level Up Announcements", value="level_up_announcements"),
-        ]
-    )
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(option="The feature to test")
     async def test_feature(self, interaction: discord.Interaction, option: app_commands.Choice[str]):
         db = SessionLocal()
         try:

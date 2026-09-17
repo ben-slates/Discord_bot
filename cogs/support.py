@@ -628,9 +628,6 @@ class SupportCog(commands.Cog):
             db.close()
 
     # --- ADMIN/STAFF COMMANDS ---
-    @app_commands.command(name="reopen", description="Admin: Reopen a closed ticket")
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.checks.has_permissions(administrator=True)
     async def reopen(self, interaction: discord.Interaction):
         await self.reopen_ticket_interaction(interaction)
 

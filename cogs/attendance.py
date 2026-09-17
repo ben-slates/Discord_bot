@@ -16,15 +16,253 @@ from utils.diag import instrument_async
 PKT = ZoneInfo("Asia/Karachi")
 ACTIVE_ADMIN_STATUSES = {"online", "dnd"}
 
+
+def _attendance_channel_config(guild_id: int):
+    db = SessionLocal()
+    try:
+        config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
+        if not config or not config.attendance_enabled or not config.attendance_channel:
+            return None
+        return str(config.attendance_channel)
+    finally:
+        db.close()
+
+
+def _attendance_stats_worker(guild_id: int, today: str):
+    db = SessionLocal()
+    try:
+        return db.query(AttendanceLog).filter_by(guild_id=str(guild_id), date=today).count()
+    finally:
+        db.close()
+
+
+def _today_attendance_worker(guild_id: int, today: str):
+    db = SessionLocal()
+    try:
+        return [row.user_id for row in db.query(AttendanceLog).filter_by(guild_id=str(guild_id), date=today).all()]
+    finally:
+        db.close()
+
+
+def _user_attendance_worker(guild_id: int, user_id: int, dates: list[str]):
+    db = SessionLocal()
+    try:
+        logs = db.query(AttendanceLog).filter(
+            AttendanceLog.guild_id == str(guild_id),
+            AttendanceLog.user_id == str(user_id),
+        ).all()
+        present_dates = {row.date for row in logs}
+        return len(logs), present_dates
+    finally:
+        db.close()
+
+
+def _month_attendance_worker(guild_id: int, month: str):
+    db = SessionLocal()
+    try:
+        logs = db.query(AttendanceLog).filter(
+            AttendanceLog.guild_id == str(guild_id),
+            AttendanceLog.date.like(f"{month}-%"),
+        ).all()
+        return len(logs), len({row.date for row in logs})
+    finally:
+        db.close()
+
+
+def _export_attendance_worker(guild_id: int, month=None, day=None, user_id=None):
+    db = SessionLocal()
+    try:
+        query = db.query(AttendanceLog).filter_by(guild_id=str(guild_id))
+        if user_id:
+            query = query.filter_by(user_id=str(user_id))
+        if day:
+            query = query.filter_by(date=day)
+        elif month:
+            query = query.filter(AttendanceLog.date.like(f"{month}-%"))
+        return [(row.user_id, row.date, row.timestamp.isoformat()) for row in query.all()]
+    finally:
+        db.close()
+
+
+class AttendanceDashboardView(discord.ui.View):
+    """Persistent public attendance actions for the configured channel."""
+
+    def __init__(self, cog):
+        super().__init__(timeout=None)
+        self.cog = cog
+
+    @discord.ui.button(label="Stats", style=discord.ButtonStyle.primary, custom_id="attendance_stats")
+    async def stats(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        await self.cog.send_stats(interaction)
+
+    @discord.ui.button(label="Today", style=discord.ButtonStyle.secondary, custom_id="attendance_today")
+    async def today(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        await self.cog.send_today(interaction)
+
+    @discord.ui.button(label="My Record", style=discord.ButtonStyle.secondary, custom_id="attendance_user")
+    async def user(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        await self.cog.send_user_record(interaction, interaction.user)
+
+
+class AttendanceMonthModal(discord.ui.Modal, title="Monthly Attendance"):
+    def __init__(self, cog):
+        super().__init__()
+        self.cog = cog
+        self.month = discord.ui.TextInput(label="Month", placeholder="YYYY-MM (leave blank for current month)", required=False, max_length=7)
+        self.add_item(self.month)
+
+    async def on_submit(self, interaction):
+        await interaction.response.defer(ephemeral=True)
+        await self.cog.send_month(interaction, self.month.value.strip() or None)
+
+
+class AttendanceExportModal(discord.ui.Modal):
+    def __init__(self, cog, mode):
+        title = "Export Attendance by Month" if mode == "month" else "Export Attendance by Day"
+        super().__init__(title=title)
+        self.cog = cog
+        self.mode = mode
+        self.value = discord.ui.TextInput(
+            label="Month (YYYY-MM)" if mode == "month" else "Day (YYYY-MM-DD)",
+            placeholder="2026-09" if mode == "month" else "2026-09-17",
+            required=True,
+            max_length=10,
+        )
+        self.add_item(self.value)
+
+    async def on_submit(self, interaction):
+        await interaction.response.defer(ephemeral=True)
+        await self.cog.send_export(
+            interaction,
+            month=self.value.value.strip() if self.mode == "month" else None,
+            day=self.value.value.strip() if self.mode == "day" else None,
+        )
+
+
+class AttendanceAdminSelectView(discord.ui.View):
+    def __init__(self, cog, action, guild=None):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.action = action
+        if action == "status":
+            admins = [member for member in guild.members if not member.bot and member.guild_permissions.administrator]
+            self.members = discord.ui.Select(
+                placeholder="Select an administrator",
+                options=[discord.SelectOption(label=member.display_name[:100], value=str(member.id)) for member in admins[:25]]
+                or [discord.SelectOption(label="No administrators found", value="0")],
+            )
+        else:
+            self.members = discord.ui.UserSelect(placeholder="Select a user")
+        self.add_item(self.members)
+        self.members.callback = self._selected
+
+    async def _selected(self, interaction):
+        if self.action == "status":
+            member = interaction.guild.get_member(int(self.members.values[0])) if self.members.values and self.members.values[0] != "0" else None
+        else:
+            member = self.members.values[0] if self.members.values else None
+        if self.action == "status" and (not isinstance(member, discord.Member) or not member.guild_permissions.administrator):
+            await interaction.response.send_message("Select a member with Administrator permission.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        if self.action == "status":
+            await self.cog.send_check_status(interaction, member)
+        else:
+            await self.cog.send_export(interaction, user=member)
+
+
+class AttendanceExportView(discord.ui.View):
+    def __init__(self, cog):
+        super().__init__(timeout=300)
+        self.cog = cog
+
+    @discord.ui.button(label="Month", style=discord.ButtonStyle.primary)
+    async def month(self, interaction, button):
+        await interaction.response.send_modal(AttendanceExportModal(self.cog, "month"))
+
+    @discord.ui.button(label="Day", style=discord.ButtonStyle.primary)
+    async def day(self, interaction, button):
+        await interaction.response.send_modal(AttendanceExportModal(self.cog, "day"))
+
+    @discord.ui.button(label="User", style=discord.ButtonStyle.secondary)
+    async def user(self, interaction, button):
+        await interaction.response.send_message("Select the user whose attendance you want to export:", view=AttendanceAdminSelectView(self.cog, "export"), ephemeral=True)
+
+
+class AttendanceSettingsView(discord.ui.View):
+    def __init__(self, cog):
+        super().__init__(timeout=300)
+        self.cog = cog
+
+    @discord.ui.button(label="Activity", style=discord.ButtonStyle.primary)
+    async def activity(self, interaction, button):
+        await interaction.response.defer(ephemeral=True)
+        await self.cog.send_activity(interaction)
+
+    @discord.ui.button(label="Check Status", style=discord.ButtonStyle.secondary)
+    async def check_status(self, interaction, button):
+        await interaction.response.send_message("Select an administrator to check:", view=AttendanceAdminSelectView(self.cog, "status", interaction.guild), ephemeral=True)
+
+    @discord.ui.button(label="Export", style=discord.ButtonStyle.success)
+    async def export(self, interaction, button):
+        await interaction.response.send_message("Choose the attendance data to export:", view=AttendanceExportView(self.cog), ephemeral=True)
+
+    @discord.ui.button(label="Month", style=discord.ButtonStyle.secondary)
+    async def month(self, interaction, button):
+        await interaction.response.send_modal(AttendanceMonthModal(self.cog))
+
 class AttendanceCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         # in-memory cache: guild_id (str) -> set of user ids who sent a message today
         self._message_activity = defaultdict(set)
         self.daily_cleanup.start()
+        self.dashboard_check.start()
+        self.bot.add_view(AttendanceDashboardView(self))
 
     def cog_unload(self):
         self.daily_cleanup.cancel()
+        self.dashboard_check.cancel()
+
+    @tasks.loop(minutes=1)
+    async def dashboard_check(self):
+        await self.bot.wait_until_ready()
+        for guild in self.bot.guilds:
+            channel_id = await run_db(_attendance_channel_config, guild.id)
+            if not channel_id:
+                continue
+            await self.ensure_dashboard(guild, channel_id)
+
+    async def ensure_dashboard(self, guild, channel_id):
+        """Create the public attendance panel when it is missing."""
+        try:
+            channel = guild.get_channel(int(channel_id))
+        except (TypeError, ValueError):
+            return False
+        if not isinstance(channel, discord.TextChannel):
+            return False
+        try:
+            async for message in channel.history(limit=10):
+                if message.author == self.bot.user and message.embeds and message.embeds[0].title == "Attendance Dashboard":
+                    return True
+            embed = discord.Embed(
+                title="Attendance Dashboard",
+                description="View today’s attendance, server stats, or your own attendance record.",
+                color=discord.Color.blurple(),
+            )
+            await channel.send(embed=embed, view=AttendanceDashboardView(self))
+            logging.info("Attendance dashboard sent to channel %s in guild %s", channel.id, guild.id)
+            return True
+        except discord.HTTPException:
+            logging.exception("Could not maintain attendance dashboard in channel %s", channel.id)
+            return False
+
+    @dashboard_check.before_loop
+    async def before_dashboard_check(self):
+        await self.bot.wait_until_ready()
 
     @tasks.loop(time=datetime.time(hour=12, minute=0, tzinfo=datetime.timezone(datetime.timedelta(hours=5))))
     async def daily_cleanup(self):
@@ -169,8 +407,154 @@ class AttendanceCog(commands.Cog):
         if before.channel is None and after.channel is not None:
             await run_db(self._mark_presence_attendance, member.guild.id, member.id)
 
+    async def _require_attendance_channel(self, interaction):
+        channel_id = await run_db(_attendance_channel_config, interaction.guild_id)
+        if not channel_id:
+            await interaction.followup.send("Attendance is not enabled for this server.", ephemeral=True)
+            return False
+        if str(interaction.channel_id) != channel_id:
+            await interaction.followup.send(f"This action can only be used in <#{channel_id}>.", ephemeral=True)
+            return False
+        return True
 
-    @app_commands.command(name="stats", description="Shows overall attendance statistics")
+    async def send_stats(self, interaction):
+        if not await self._require_attendance_channel(interaction):
+            return
+        today = datetime.datetime.now(PKT).strftime('%Y-%m-%d')
+        present_count = await run_db(_attendance_stats_worker, interaction.guild_id, today)
+        total_members = sum(1 for member in interaction.guild.members if not member.bot)
+        absent_count = max(0, total_members - present_count)
+        attendance_percentage = (present_count / total_members * 100) if total_members else 0
+        embed = discord.Embed(title=f"Server Attendance Stats - {today}", color=discord.Color.gold(), timestamp=datetime.datetime.now(PKT))
+        embed.add_field(name="Total Members (Non-Bot)", value=str(total_members), inline=False)
+        embed.add_field(name="Present Today", value=str(present_count), inline=True)
+        embed.add_field(name="Absent Today", value=str(absent_count), inline=True)
+        embed.add_field(name="Attendance Rate", value=f"{attendance_percentage:.1f}%", inline=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    async def send_today(self, interaction):
+        if not await self._require_attendance_channel(interaction):
+            return
+        today = datetime.datetime.now(PKT).strftime('%Y-%m-%d')
+        user_ids = await run_db(_today_attendance_worker, interaction.guild_id, today)
+        embed = discord.Embed(title=f"Attendance for Today ({today})", color=discord.Color.green(), timestamp=datetime.datetime.now(PKT))
+        if not user_ids:
+            embed.description = "No one has been marked present today yet."
+        else:
+            names = []
+            for index, user_id in enumerate(user_ids[:50], start=1):
+                member = interaction.guild.get_member(int(user_id))
+                names.append(f"{index}. {member.display_name if member else f'Unknown ({user_id})'}")
+            embed.description = "\n".join(names) + (f"\n\n*...and {len(user_ids) - 50} more*" if len(user_ids) > 50 else "")
+        embed.set_footer(text=f"Total Present: {len(user_ids)}")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    async def send_user_record(self, interaction, target):
+        if not await self._require_attendance_channel(interaction):
+            return
+        current_time = datetime.datetime.now(PKT)
+        dates = [(current_time - datetime.timedelta(days=offset)).strftime('%Y-%m-%d') for offset in range(7)]
+        total, present_dates = await run_db(_user_attendance_worker, interaction.guild_id, target.id, dates)
+        if total == 0:
+            await interaction.followup.send("No data found for this user.", ephemeral=True)
+            return
+        member = interaction.guild.get_member(target.id)
+        display_name = member.display_name if member else getattr(target, "name", f"Unknown ({target.id})")
+        embed = discord.Embed(title=f"Attendance Record: {display_name}", color=discord.Color.blue())
+        embed.add_field(name="Total Presents", value=str(total), inline=True)
+        embed.add_field(name="Last 7 Days", value="\n".join(f"{date}: {'Present' if date in present_dates else 'Absent'}" for date in dates), inline=False)
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    async def send_month(self, interaction, month):
+        if not await self._require_attendance_channel(interaction):
+            return
+        month = month or datetime.datetime.now(PKT).strftime('%Y-%m')
+        try:
+            datetime.datetime.strptime(month, '%Y-%m')
+        except ValueError:
+            await interaction.followup.send("Invalid format. Please use YYYY-MM.", ephemeral=True)
+            return
+        total, days = await run_db(_month_attendance_worker, interaction.guild_id, month)
+        embed = discord.Embed(title=f"Monthly Summary: {month}", color=discord.Color.purple())
+        if not days:
+            embed.description = "No attendance data found for this month."
+        else:
+            embed.add_field(name="Days Tracked", value=str(days), inline=True)
+            embed.add_field(name="Total Presents (All Users)", value=str(total), inline=True)
+            embed.add_field(name="Avg Daily Attendance", value=f"{total / days:.1f}", inline=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    async def send_activity(self, interaction):
+        if not await self._require_attendance_channel(interaction):
+            return
+        msg_members = [interaction.guild.get_member(uid) for uid in list(self._message_activity.get(str(interaction.guild_id), []))[:25]]
+        messages = "\n".join(f"{member.display_name} ({member.id})" for member in msg_members if member) or "None"
+        voice = [f"{member.display_name} in #{channel.name}" for channel in interaction.guild.voice_channels for member in channel.members if not member.bot]
+        embed = discord.Embed(title="Attendance Activity (in-memory)", color=discord.Color.blurple())
+        embed.add_field(name="Message Activity (last 25, since restart)", value=messages, inline=False)
+        embed.add_field(name="Voice Participants (now)", value="\n".join(voice[:50]) or "None", inline=False)
+        embed.set_footer(text="In-memory data resets on bot restart or daily cleanup")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    async def send_check_status(self, interaction, member):
+        if not await self._require_attendance_channel(interaction):
+            return
+        if not isinstance(member, discord.Member) or not member.guild_permissions.administrator:
+            await interaction.followup.send("The selected member must have the Administrator permission.", ephemeral=True)
+            return
+        now = datetime.datetime.now(datetime.timezone.utc)
+        month_start = now.astimezone(PKT).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        rows = await run_db(_get_admin_month_status, interaction.guild_id, member.id, month_start, now)
+        present_days = sum(row[2] for row in rows)
+        details = "\n".join(f"{date}: {hours:.2f}h — {'Present' if present else 'Absent'}" for date, hours, present in rows) or "No days tracked yet."
+        embed = discord.Embed(title=f"Administrator Status: {member.display_name}", description=details, color=discord.Color.green() if present_days else discord.Color.orange())
+        embed.set_footer(text=f"{present_days}/{len(rows)} days present (minimum 8 hours online or dnd)")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    async def send_export(self, interaction, month=None, day=None, user=None):
+        if not await self._require_attendance_channel(interaction):
+            return
+        if month:
+            try: datetime.datetime.strptime(month, '%Y-%m')
+            except ValueError:
+                await interaction.followup.send("Invalid month format. Please use YYYY-MM.", ephemeral=True); return
+        if day:
+            try: datetime.datetime.strptime(day, '%Y-%m-%d')
+            except ValueError:
+                await interaction.followup.send("Invalid day format. Please use YYYY-MM-DD.", ephemeral=True); return
+        rows = await run_db(_export_attendance_worker, interaction.guild_id, month, day, user.id if user else None)
+        output = io.StringIO(); writer = csv.writer(output); writer.writerow(["User ID", "Username", "Date", "Timestamp"])
+        for user_id, date, timestamp in rows:
+            member = interaction.guild.get_member(int(user_id))
+            writer.writerow([user_id, member.name if member else "Unknown", date, timestamp])
+        file = discord.File(io.BytesIO(output.getvalue().encode()), filename=f"attendance_export_{interaction.guild_id}.csv")
+        await interaction.followup.send(f"Here is the attendance data ({len(rows)} records):", file=file, ephemeral=True)
+
+
+    @app_commands.command(name="setting-attendance", description="Admin: open attendance settings")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.checks.has_permissions(administrator=True)
+    async def setting_attendance(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        channel_id = await run_db(_attendance_channel_config, interaction.guild_id)
+        if not channel_id:
+            await interaction.followup.send("Attendance is not enabled for this server.", ephemeral=True)
+            return
+        if str(interaction.channel_id) != channel_id:
+            await interaction.followup.send(f"This command can only be used in <#{channel_id}>.", ephemeral=True)
+            return
+        embed = discord.Embed(
+            title="Attendance Settings",
+            description=(
+                "**Activity** — current message and voice activity.\n"
+                "**Check Status** — an administrator’s 8-hour active-status attendance.\n"
+                "**Export** — download attendance CSV by month, day, or user.\n"
+                "**Month** — monthly attendance summary."
+            ),
+            color=discord.Color.blurple(),
+        )
+        await interaction.followup.send(embed=embed, view=AttendanceSettingsView(self), ephemeral=True)
+
     async def stats(self, interaction: discord.Interaction):
         db = SessionLocal()
         try:
@@ -204,13 +588,6 @@ class AttendanceCog(commands.Cog):
         finally:
             db.close()
 
-    @app_commands.command(name="export", description="Admin: Export server attendance to CSV")
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(
-        month="Format: YYYY-MM (e.g. 2024-05)",
-        day="Format: YYYY-MM-DD (e.g. 2024-05-15)",
-        user="Specific user to export"
-    )
     async def export(self, interaction: discord.Interaction, month: str = None, day: str = None, user: discord.User = None):
         db = SessionLocal()
         try:
@@ -246,7 +623,6 @@ class AttendanceCog(commands.Cog):
         finally:
             db.close()
 
-    @app_commands.command(name="today", description="Shows today's attendance")
     async def today(self, interaction: discord.Interaction):
         db = SessionLocal()
         try:
@@ -285,7 +661,6 @@ class AttendanceCog(commands.Cog):
         finally:
             db.close()
 
-    @app_commands.command(name="user", description="Shows attendance history of a member")
     async def user(self, interaction: discord.Interaction, member: discord.User = None):
         db = SessionLocal()
         try:
@@ -347,8 +722,6 @@ class AttendanceCog(commands.Cog):
         finally:
             db.close()
 
-    @app_commands.command(name="month", description="Shows monthly attendance for a selected month (YYYY-MM)")
-    @app_commands.describe(month_str="Format: YYYY-MM (e.g., 2024-05). Leave blank for current month.")
     async def month(self, interaction: discord.Interaction, month_str: str = None):
         db = SessionLocal()
         try:
@@ -397,8 +770,6 @@ class AttendanceCog(commands.Cog):
         finally:
             db.close()
 
-    @app_commands.command(name="activity", description="(Admin) View in-memory message activity and current voice participants")
-    @app_commands.default_permissions(administrator=True)
     async def activity(self, interaction: discord.Interaction):
         db = SessionLocal()
         try:
@@ -511,10 +882,6 @@ class AttendanceCog(commands.Cog):
         finally:
             db.close()
 
-    @app_commands.command(name="check-status", description="Admin: check an administrator's monthly active-status attendance")
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.describe(member="The administrator whose status should be checked")
     async def check_status(self, interaction: discord.Interaction, member: discord.Member):
         await interaction.response.defer(ephemeral=True)
         config = await run_db(self._get_guild_config, interaction.guild_id)

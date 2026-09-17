@@ -20,6 +20,13 @@ DAILY_SUMMARY_TIMES = [
     datetime.time(hour=8, minute=0, tzinfo=PKT),
     datetime.time(hour=23, minute=50, tzinfo=PKT),
 ]
+QUOTE_OF_THE_DAY = (
+    ("The best way to predict the future is to invent it.", "Alan Kay"),
+    ("Security is a process, not a product.", "Bruce Schneier"),
+    ("Programs must be written for people to read, and only incidentally for machines to execute.", "Harold Abelson"),
+    ("Great things in business are never done by one person; they are done by a team of people.", "Steve Jobs"),
+    ("The quieter you become, the more you are able to hear.", "Rumi"),
+)
 
 
 def _next_leaderboard_run(now_utc: datetime.datetime | None = None) -> datetime.datetime:
@@ -129,6 +136,18 @@ class NotificationsCog(commands.Cog):
                             "Configured leaderboard channel %s was not found in guild %s",
                             leaderboard_channel_id, guild.id,
                         )
+
+                # Quote of the Day at the same fixed 08:00 Asia/Karachi run.
+                if current_time_str == "08:00" and config.quote_of_day_enabled and config.quote_of_day_channel:
+                    channel = guild.get_channel(int(config.quote_of_day_channel))
+                    if isinstance(channel, discord.TextChannel):
+                        quote, author = QUOTE_OF_THE_DAY[now.toordinal() % len(QUOTE_OF_THE_DAY)]
+                        embed = discord.Embed(title="Quote of the Day", description=f"“{quote}”", color=discord.Color.teal())
+                        embed.set_footer(text=author)
+                        try:
+                            await channel.send(embed=embed)
+                        except discord.HTTPException:
+                            logging.exception("Failed to send Quote of the Day to channel %s", channel.id)
                 
                 # Nightly Attendance at 23:50
                 if current_time_str == "23:50" and config.attendance_enabled and config.attendance_channel:
@@ -150,9 +169,18 @@ class NotificationsCog(commands.Cog):
                         )
                         embed.description = att_text
                         try:
+                            # Keep one current nightly log: remove any recent
+                            # bot-generated attendance logs before posting it.
+                            async for message in channel.history(limit=10):
+                                if (
+                                    message.author == self.bot.user
+                                    and message.embeds
+                                    and (message.embeds[0].title or "").startswith("🌙 Nightly Attendance Log")
+                                ):
+                                    await message.delete()
                             await channel.send(embed=embed)
-                        except discord.Forbidden:
-                            pass
+                        except discord.HTTPException:
+                            logging.exception("Failed to replace nightly attendance log in channel %s", channel.id)
                 
                 # Custom Leaderboards at 08:00
                 if current_time_str == "08:00":
