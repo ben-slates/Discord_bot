@@ -181,7 +181,8 @@ class SupportCog(commands.Cog):
     async def before_auto_delete(self):
         await self.bot.wait_until_ready()
 
-    @tasks.loop(minutes=30)
+    # Keep the public ticket dashboard available if it is accidentally deleted.
+    @tasks.loop(minutes=1)
     async def dashboard_check(self):
         for guild in self.bot.guilds:
             try:

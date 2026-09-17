@@ -3,6 +3,8 @@
 import re
 import secrets
 import logging
+import asyncio
+from pathlib import Path
 
 import discord
 from discord import app_commands
@@ -14,6 +16,8 @@ from utils.db_executor import run_db
 
 
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+UUID_RE = re.compile(r"^0x[0-9A-Fa-f]{8}$")
+CERTIFICATE_DIR = Path(__file__).resolve().parent.parent / "assets" / "batch1"
 
 
 def _get_config(guild_id):
@@ -78,6 +82,21 @@ def _list_records():
         db.close()
 
 
+def _get_certificate_validation_details(verification_id: str):
+    db = SessionLocal()
+    try:
+        record = db.query(VerificationRecord).filter_by(verification_id=verification_id).first()
+        if not record or not record.certificate_name or not record.certificate_team:
+            return None
+        return record.certificate_name, record.certificate_team
+    finally:
+        db.close()
+
+
+def _certificate_path(verification_id: str) -> Path:
+    return CERTIFICATE_DIR / f"certificate-{verification_id[2:].upper()}.pdf"
+
+
 class VerificationEmailModal(discord.ui.Modal, title="Verify — Name & Email"):
     def __init__(self, cog):
         super().__init__()
@@ -102,6 +121,24 @@ class VerificationEmailModal(discord.ui.Modal, title="Verify — Name & Email"):
         await self.cog._register_email(interaction, self.email.value, self.name.value)
 
 
+class CertificateValidationModal(discord.ui.Modal, title="Validate Certificate"):
+    def __init__(self, cog):
+        super().__init__()
+        self.cog = cog
+        self.uuid = discord.ui.TextInput(
+            label="Certificate Verification ID",
+            placeholder="0xXXXXXXXX",
+            required=True,
+            min_length=10,
+            max_length=10,
+        )
+        self.add_item(self.uuid)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        await self.cog.validate_certificate_interaction(interaction, self.uuid.value)
+
+
 class VerificationDashboardView(discord.ui.View):
     """Persistent public dashboard used instead of requiring slash commands."""
 
@@ -116,6 +153,10 @@ class VerificationDashboardView(discord.ui.View):
     @discord.ui.button(label="Check UUID", style=discord.ButtonStyle.secondary, custom_id="verification_check_uuid")
     async def check_uuid_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.cog.check_uuid_interaction(interaction)
+
+    @discord.ui.button(label="Validate Certificate", style=discord.ButtonStyle.success, custom_id="verification_validate_certificate")
+    async def validate_certificate_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(CertificateValidationModal(self.cog))
 
 
 class VerificationCog(commands.Cog):
@@ -155,7 +196,7 @@ class VerificationCog(commands.Cog):
                 if not found:
                     embed = discord.Embed(
                         title="Verification Dashboard",
-                        description="Verify your account or view your existing Verification ID using the buttons below.",
+                        description="Verify your account, view your Verification ID, or validate a certificate using the buttons below.",
                         color=discord.Color.blurple(),
                     )
                     await channel.send(embed=embed, view=VerificationDashboardView(self))
@@ -230,6 +271,26 @@ class VerificationCog(commands.Cog):
             await interaction.followup.send(f"Your Verification ID:\n```{verification_id}```", ephemeral=True)
         else:
             await interaction.followup.send("You are not registered yet. Use the **Verify** button and enter your email first.", ephemeral=True)
+
+    async def validate_certificate_interaction(self, interaction: discord.Interaction, uuid: str):
+        """Validate an existing generated certificate from the verification channel."""
+        if not await self._require_channel(interaction):
+            return
+        raw_uuid = uuid.strip()
+        verification_id = f"0x{raw_uuid[2:].upper()}" if raw_uuid[:2].lower() == "0x" else raw_uuid
+        if not UUID_RE.fullmatch(verification_id):
+            await interaction.followup.send("Invalid certificate Verification ID. Use `0xXXXXXXXX`.", ephemeral=True)
+            return
+        details = await run_db(_get_certificate_validation_details, verification_id)
+        certificate_path = _certificate_path(verification_id)
+        if not details or not await asyncio.to_thread(certificate_path.is_file):
+            await interaction.followup.send("No generated certificate was found for that Verification ID.", ephemeral=True)
+            return
+        name, team = details
+        await interaction.followup.send(
+            f"Certificate is valid.\nName: **{name}**\nTeam: **{team}**",
+            ephemeral=True,
+        )
 
     @app_commands.command(name="verify-list", description="Admin: view verification records")
     @app_commands.default_permissions(administrator=True)

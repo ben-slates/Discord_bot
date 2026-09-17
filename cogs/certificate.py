@@ -9,7 +9,6 @@ import logging
 from pathlib import Path
 
 import discord
-from discord import app_commands
 from discord.ext import commands, tasks
 
 from database import SessionLocal, GuildConfig, VerificationRecord
@@ -375,33 +374,6 @@ class CertificateCog(commands.Cog):
         await interaction.followup.send(
             "Your certificate has been generated.",
             file=discord.File(str(certificate_path), filename=certificate_path.name),
-            ephemeral=True,
-        )
-
-    @app_commands.command(name="validate-cert", description="Validate a generated certificate by UUID")
-    @app_commands.describe(uuid="The certificate verification ID")
-    async def validate_cert(self, interaction: discord.Interaction, uuid: str):
-        await interaction.response.defer(ephemeral=True)
-        raw_uuid = uuid.strip()
-        verification_id = f"0x{raw_uuid[2:].upper()}" if raw_uuid[:2].lower() == "0x" else raw_uuid
-        certificate_config = await run_db(_certificate_config, interaction.guild_id)
-        if not certificate_config:
-            await interaction.followup.send("Certificate generation is not enabled for this server.", ephemeral=True)
-            return
-        if str(interaction.channel_id) != certificate_config[1]:
-            await interaction.followup.send("Use the configured certificate channel for validation.", ephemeral=True)
-            return
-        if not UUID_RE.fullmatch(verification_id):
-            await interaction.followup.send("Invalid certificate UUID format. Use `0xXXXXXXXX`.", ephemeral=True)
-            return
-        details = await run_db(_get_certificate_details, verification_id)
-        certificate_path = _certificate_path(verification_id)
-        if not details or not await asyncio.to_thread(certificate_path.is_file):
-            await interaction.followup.send("No generated certificate was found for that UUID.", ephemeral=True)
-            return
-        name, team = details
-        await interaction.followup.send(
-            f"Certificate is valid.\nName: **{name}**\nTeam: **{team}**",
             ephemeral=True,
         )
 
