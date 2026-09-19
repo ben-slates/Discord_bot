@@ -9,7 +9,7 @@ import time
 import traceback
 from dataclasses import dataclass
 from typing import Any
-from sqlalchemy import create_engine, Column, Integer, BigInteger, String, Boolean, DateTime, ForeignKey, Float, Index, event, inspect, text
+from sqlalchemy import create_engine, Column, Integer, BigInteger, String, Boolean, DateTime, ForeignKey, Float, Index, UniqueConstraint, event, inspect, text
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 from dotenv import load_dotenv
@@ -289,6 +289,18 @@ class VerificationRecord(Base):
     certificate_team = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))), onupdate=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
+
+
+class WelcomeDMDelivery(Base):
+    """Tracks onboarding DMs so restarts never re-message existing members."""
+
+    __tablename__ = "welcome_dm_deliveries"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    guild_id = Column(String, nullable=False, index=True)
+    user_id = Column(String, nullable=False, index=True)
+    delivered_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
+
+    __table_args__ = (UniqueConstraint("guild_id", "user_id", name="uq_welcome_dm_delivery"),)
 
 Base.metadata.create_all(bind=engine)
 
