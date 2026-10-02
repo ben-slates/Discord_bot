@@ -73,6 +73,17 @@ def _get_record(user_id: int):
         db.close()
 
 
+def _set_verification_dashboard_message_id(guild_id: int, message_id: int):
+    db = SessionLocal()
+    try:
+        config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
+        if config:
+            config.verification_dashboard_message_id = str(message_id)
+            db.commit()
+    finally:
+        db.close()
+
+
 def _list_records():
     db = SessionLocal()
     try:
@@ -172,53 +183,72 @@ class VerificationCog(commands.Cog):
     async def dashboard_check(self):
         await self.bot.wait_until_ready()
         try:
-            enabled_channels = await run_db(self._get_enabled_channel)
+            enabled_channels = await run_db(self._get_enabled_dashboards)
         except Exception:
             logging.exception("Could not load verification dashboard configuration")
             return
         for guild in self.bot.guilds:
-            channel_id = enabled_channels.get(guild.id)
-            if not channel_id:
+            dashboard = enabled_channels.get(guild.id)
+            if not dashboard:
                 continue
-            try:
-                channel = guild.get_channel(int(channel_id))
-            except (TypeError, ValueError):
-                logging.warning("Invalid verification channel %r for guild %s", channel_id, guild.id)
-                continue
-            if not isinstance(channel, discord.TextChannel):
-                continue
-            try:
-                found = False
-                async for message in channel.history(limit=100):
-                    if message.author == self.bot.user and message.embeds and message.embeds[0].title == "Verification Dashboard":
-                        found = True
-                        break
-                if not found:
-                    embed = discord.Embed(
-                        title="Verification Dashboard",
-                        description="Verify your account, view your Verification ID, or validate a certificate using the buttons below.",
-                        color=discord.Color.blurple(),
-                    )
-                    await channel.send(embed=embed, view=VerificationDashboardView(self))
-                    logging.info("Verification dashboard sent to channel %s in guild %s", channel.id, guild.id)
-            except discord.HTTPException:
-                logging.exception("Could not maintain verification dashboard in channel %s", channel.id)
+            await self.ensure_dashboard(guild, *dashboard)
 
     @dashboard_check.before_loop
     async def before_dashboard_check(self):
         await self.bot.wait_until_ready()
 
     @staticmethod
-    def _get_enabled_channel():
+    def _get_enabled_dashboards():
         db = SessionLocal()
         try:
             rows = db.query(GuildConfig).filter(
                 GuildConfig.verification_enabled.is_(True),
                 GuildConfig.verification_channel.isnot(None),
             ).all()
-            return {int(row.guild_id): str(row.verification_channel) for row in rows}
+            return {
+                int(row.guild_id): (str(row.verification_channel), row.verification_dashboard_message_id)
+                for row in rows
+            }
         finally:
             db.close()
+
+    async def ensure_dashboard(self, guild, channel_id, message_id=None):
+        try:
+            channel = guild.get_channel(int(channel_id))
+        except (TypeError, ValueError):
+            logging.warning("Invalid verification channel %r for guild %s", channel_id, guild.id)
+            return False
+        if not isinstance(channel, discord.TextChannel):
+            return False
+        if message_id:
+            try:
+                message = await channel.fetch_message(int(message_id))
+                if message.author == self.bot.user and message.embeds and message.embeds[0].title == "Verification Dashboard":
+                    return True
+            except discord.NotFound:
+                pass
+            except (discord.Forbidden, discord.HTTPException):
+                logging.exception("Could not verify verification dashboard message %s", message_id)
+                return False
+        try:
+            # Bootstrap an existing dashboard once; thereafter the tracked ID
+            # prevents new messages unless the dashboard is actually deleted.
+            async for message in channel.history(limit=None):
+                if message.author == self.bot.user and message.embeds and message.embeds[0].title == "Verification Dashboard":
+                    await run_db(_set_verification_dashboard_message_id, guild.id, message.id)
+                    return True
+            embed = discord.Embed(
+                title="Verification Dashboard",
+                description="Verify your account, view your Verification ID, or validate a certificate using the buttons below.",
+                color=discord.Color.blurple(),
+            )
+            message = await channel.send(embed=embed, view=VerificationDashboardView(self))
+            await run_db(_set_verification_dashboard_message_id, guild.id, message.id)
+            logging.info("Verification dashboard sent to channel %s in guild %s", channel.id, guild.id)
+            return True
+        except discord.HTTPException:
+            logging.exception("Could not maintain verification dashboard in channel %s", channel.id)
+            return False
 
     async def _configured_channel(self, interaction):
         if not interaction.guild_id or not interaction.channel:

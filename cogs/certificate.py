@@ -47,6 +47,17 @@ def _certificate_config(guild_id):
         db.close()
 
 
+def _set_certificate_dashboard_message_id(guild_id, message_id):
+    db = SessionLocal()
+    try:
+        config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
+        if config:
+            config.certificate_dashboard_message_id = str(message_id)
+            db.commit()
+    finally:
+        db.close()
+
+
 def _get_user_verification_id(user_id):
     db = SessionLocal()
     try:
@@ -265,7 +276,10 @@ class CertificateCog(commands.Cog):
                 GuildConfig.certificate_enabled.is_(True),
                 GuildConfig.certificate_channel.isnot(None),
             ).all()
-            return {int(row.guild_id): str(row.certificate_channel) for row in rows}
+            return {
+                int(row.guild_id): (str(row.certificate_channel), row.certificate_dashboard_message_id)
+                for row in rows
+            }
         finally:
             db.close()
 
@@ -278,36 +292,50 @@ class CertificateCog(commands.Cog):
             logging.exception("Could not load certificate dashboard configuration")
             return
         for guild in self.bot.guilds:
-            channel_id = enabled_channels.get(guild.id)
-            if not channel_id:
+            dashboard = enabled_channels.get(guild.id)
+            if not dashboard:
                 continue
-            try:
-                channel = guild.get_channel(int(channel_id))
-            except (TypeError, ValueError):
-                logging.warning("Invalid certificate channel %r for guild %s", channel_id, guild.id)
-                continue
-            if not isinstance(channel, discord.TextChannel):
-                continue
-            try:
-                found = False
-                async for message in channel.history(limit=100):
-                    if message.author == self.bot.user and message.embeds and message.embeds[0].title == "Certification Dashboard":
-                        found = True
-                        break
-                if not found:
-                    embed = discord.Embed(
-                        title="Certification Dashboard",
-                        description="Generate your certificate or retrieve an existing certificate using the buttons below.",
-                        color=discord.Color.gold(),
-                    )
-                    await channel.send(embed=embed, view=CertificateDashboardView(self))
-                    logging.info("Certificate dashboard sent to channel %s in guild %s", channel.id, guild.id)
-            except discord.HTTPException:
-                logging.exception("Could not maintain certificate dashboard in channel %s", channel.id)
+            await self.ensure_dashboard(guild, *dashboard)
 
     @dashboard_check.before_loop
     async def before_dashboard_check(self):
         await self.bot.wait_until_ready()
+
+    async def ensure_dashboard(self, guild, channel_id, message_id=None):
+        try:
+            channel = guild.get_channel(int(channel_id))
+        except (TypeError, ValueError):
+            logging.warning("Invalid certificate channel %r for guild %s", channel_id, guild.id)
+            return False
+        if not isinstance(channel, discord.TextChannel):
+            return False
+        if message_id:
+            try:
+                message = await channel.fetch_message(int(message_id))
+                if message.author == self.bot.user and message.embeds and message.embeds[0].title == "Certification Dashboard":
+                    return True
+            except discord.NotFound:
+                pass
+            except (discord.Forbidden, discord.HTTPException):
+                logging.exception("Could not verify certificate dashboard message %s", message_id)
+                return False
+        try:
+            async for message in channel.history(limit=None):
+                if message.author == self.bot.user and message.embeds and message.embeds[0].title == "Certification Dashboard":
+                    await run_db(_set_certificate_dashboard_message_id, guild.id, message.id)
+                    return True
+            embed = discord.Embed(
+                title="Certification Dashboard",
+                description="Generate your certificate or retrieve an existing certificate using the buttons below.",
+                color=discord.Color.gold(),
+            )
+            message = await channel.send(embed=embed, view=CertificateDashboardView(self))
+            await run_db(_set_certificate_dashboard_message_id, guild.id, message.id)
+            logging.info("Certificate dashboard sent to channel %s in guild %s", channel.id, guild.id)
+            return True
+        except discord.HTTPException:
+            logging.exception("Could not maintain certificate dashboard in channel %s", channel.id)
+            return False
 
     async def generate_certificate(self, interaction: discord.Interaction):
         await interaction.response.send_modal(CertificateUUIDModal(self))

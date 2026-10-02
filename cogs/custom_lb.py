@@ -599,6 +599,12 @@ def _enable_feature_worker(guild_id, option, channel_id):
         if not entry:
             return None, "Unknown feature. Use one of the feature names shown in the panel."
         enabled_field, channel_field, label = entry
+        dashboard_field = {
+            "attendance": "attendance_dashboard_message_id",
+            "verification": "verification_dashboard_message_id",
+        }.get(option)
+        if dashboard_field and getattr(config, channel_field) != str(channel_id):
+            setattr(config, dashboard_field, None)
         setattr(config, enabled_field, True)
         setattr(config, channel_field, str(channel_id))
         db.commit()
@@ -633,6 +639,14 @@ def _disable_feature_worker(guild_id, option):
         setattr(config, enabled_field, False)
         if channel_field:
             setattr(config, channel_field, None)
+        dashboard_field = {
+            "support": "support_dashboard_message_id",
+            "attendance": "attendance_dashboard_message_id",
+            "verification": "verification_dashboard_message_id",
+            "certificate": "certificate_dashboard_message_id",
+        }.get(option)
+        if dashboard_field:
+            setattr(config, dashboard_field, None)
         if option == "hall_of_fame":
             config.hall_of_fame_channel = None
             config.hall_of_fame_role_name = None
@@ -840,10 +854,18 @@ class CustomLBCog(commands.Cog):
             if not config:
                 config = GuildConfig(guild_id=str(interaction.guild_id))
                 db.add(config)
+            if config.certificate_channel != str(channel.id):
+                config.certificate_dashboard_message_id = None
             config.certificate_enabled = True
             config.certificate_role = str(role.id)
             config.certificate_channel = str(channel.id)
             db.commit()
+            certificate_cog = self.bot.get_cog("CertificateCog")
+            if certificate_cog:
+                try:
+                    await certificate_cog.ensure_dashboard(interaction.guild, channel.id)
+                except Exception:
+                    logging.exception("Certificate enabled but dashboard creation failed for guild %s", interaction.guild_id)
             await interaction.followup.send(
                 f"Certificate generation enabled for members with {role.mention} in {channel.mention}.",
                 ephemeral=True,

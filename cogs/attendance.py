@@ -28,6 +28,28 @@ def _attendance_channel_config(guild_id: int):
         db.close()
 
 
+def _attendance_dashboard_config(guild_id: int):
+    db = SessionLocal()
+    try:
+        config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
+        if not config or not config.attendance_enabled or not config.attendance_channel:
+            return None
+        return str(config.attendance_channel), config.attendance_dashboard_message_id
+    finally:
+        db.close()
+
+
+def _set_attendance_dashboard_message_id(guild_id: int, message_id: int):
+    db = SessionLocal()
+    try:
+        config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
+        if config:
+            config.attendance_dashboard_message_id = str(message_id)
+            db.commit()
+    finally:
+        db.close()
+
+
 def _attendance_stats_worker(guild_id: int, today: str):
     db = SessionLocal()
     try:
@@ -231,12 +253,12 @@ class AttendanceCog(commands.Cog):
     async def dashboard_check(self):
         await self.bot.wait_until_ready()
         for guild in self.bot.guilds:
-            channel_id = await run_db(_attendance_channel_config, guild.id)
-            if not channel_id:
+            dashboard = await run_db(_attendance_dashboard_config, guild.id)
+            if not dashboard:
                 continue
-            await self.ensure_dashboard(guild, channel_id)
+            await self.ensure_dashboard(guild, *dashboard)
 
-    async def ensure_dashboard(self, guild, channel_id):
+    async def ensure_dashboard(self, guild, channel_id, message_id=None):
         """Create the public attendance panel when it is missing."""
         try:
             channel = guild.get_channel(int(channel_id))
@@ -244,16 +266,28 @@ class AttendanceCog(commands.Cog):
             return False
         if not isinstance(channel, discord.TextChannel):
             return False
-        try:
-            async for message in channel.history(limit=10):
+        if message_id:
+            try:
+                message = await channel.fetch_message(int(message_id))
                 if message.author == self.bot.user and message.embeds and message.embeds[0].title == "Attendance Dashboard":
+                    return True
+            except discord.NotFound:
+                pass
+            except (discord.Forbidden, discord.HTTPException):
+                logging.exception("Could not verify attendance dashboard message %s", message_id)
+                return False
+        try:
+            async for message in channel.history(limit=None):
+                if message.author == self.bot.user and message.embeds and message.embeds[0].title == "Attendance Dashboard":
+                    await run_db(_set_attendance_dashboard_message_id, guild.id, message.id)
                     return True
             embed = discord.Embed(
                 title="Attendance Dashboard",
                 description="View today’s attendance, server stats, or your own attendance record.",
                 color=discord.Color.blurple(),
             )
-            await channel.send(embed=embed, view=AttendanceDashboardView(self))
+            message = await channel.send(embed=embed, view=AttendanceDashboardView(self))
+            await run_db(_set_attendance_dashboard_message_id, guild.id, message.id)
             logging.info("Attendance dashboard sent to channel %s in guild %s", channel.id, guild.id)
             return True
         except discord.HTTPException:

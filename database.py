@@ -160,6 +160,7 @@ class GuildConfig(Base):
     # Attendance
     attendance_enabled = Column(Boolean, default=False)
     attendance_channel = Column(String, nullable=True)
+    attendance_dashboard_message_id = Column(String, nullable=True)
     # Welcome messages
     welcome_enabled = Column(Boolean, default=False)
     welcome_channel = Column(String, nullable=True)
@@ -173,6 +174,7 @@ class GuildConfig(Base):
     support_enabled = Column(Boolean, default=False)
     support_category = Column(String, nullable=True)
     support_admin_role = Column(String, nullable=True)
+    support_dashboard_message_id = Column(String, nullable=True)
     # Security (antispam columns removed)
     # Notifications
     notification_channel = Column(String, nullable=True)
@@ -193,13 +195,16 @@ class GuildConfig(Base):
     # Quote of the Day
     quote_of_day_enabled = Column(Boolean, default=False)
     quote_of_day_channel = Column(String, nullable=True)
+    quote_of_day_last_quote = Column(String, nullable=True)
     # Verification
     verification_enabled = Column(Boolean, default=False)
     verification_channel = Column(String, nullable=True)
+    verification_dashboard_message_id = Column(String, nullable=True)
     # Certificates
     certificate_enabled = Column(Boolean, default=False)
     certificate_role = Column(String, nullable=True)
     certificate_channel = Column(String, nullable=True)
+    certificate_dashboard_message_id = Column(String, nullable=True)
     # Note: legacy `support_feature_enabled` removed; `support_enabled` used instead
 
 class UserData(Base):
@@ -332,15 +337,27 @@ def ensure_database_columns():
     if "quote_of_day_channel" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN quote_of_day_channel VARCHAR"))
+    if "quote_of_day_last_quote" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN quote_of_day_last_quote VARCHAR"))
     if "support_admin_role" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN support_admin_role VARCHAR"))
+    if "support_dashboard_message_id" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN support_dashboard_message_id VARCHAR"))
+    if "attendance_dashboard_message_id" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN attendance_dashboard_message_id VARCHAR"))
     if "verification_enabled" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN verification_enabled BOOLEAN DEFAULT FALSE"))
     if "verification_channel" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN verification_channel VARCHAR"))
+    if "verification_dashboard_message_id" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN verification_dashboard_message_id VARCHAR"))
     if "certificate_enabled" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN certificate_enabled BOOLEAN DEFAULT FALSE"))
@@ -350,6 +367,9 @@ def ensure_database_columns():
     if "certificate_channel" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN certificate_channel VARCHAR"))
+    if "certificate_dashboard_message_id" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN certificate_dashboard_message_id VARCHAR"))
     verification_columns = {column["name"] for column in inspector.get_columns("verification_records")}
     if "verification_name" not in verification_columns:
         with engine.begin() as conn:

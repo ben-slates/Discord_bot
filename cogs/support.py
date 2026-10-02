@@ -241,13 +241,33 @@ class SupportCog(commands.Cog):
             logging.warning("Support category %s has no text channels in guild %s", category.id, guild.id)
             return False
         channel = channels[0]
-        try:
-            async for message in channel.history(limit=100):
+        config = await run_db(self._get_support_config, guild.id)
+        if not config:
+            return False
+        message_id = getattr(config, "support_dashboard_message_id", None)
+        if message_id:
+            try:
+                message = await channel.fetch_message(int(message_id))
                 if message.author == self.bot.user and message.embeds and message.embeds[0].title == "Support Dashboard":
+                    return True
+            except discord.NotFound:
+                # The tracked dashboard was deleted; create its replacement below.
+                pass
+            except (discord.Forbidden, discord.HTTPException):
+                # Do not create a duplicate when Discord cannot confirm whether
+                # the existing dashboard still exists.
+                logging.exception("Could not verify support dashboard message %s", message_id)
+                return False
+        try:
+            # Bootstrap old installations that do not yet have a tracked ID.
+            # Scan the complete channel once so an older dashboard is adopted
+            # rather than duplicated; later checks use fetch_message above.
+            async for message in channel.history(limit=None):
+                if message.author == self.bot.user and message.embeds and message.embeds[0].title == "Support Dashboard":
+                    await run_db(_set_support_dashboard_message_id, guild.id, message.id)
                     return True
         except discord.HTTPException:
             logging.exception("Could not inspect support dashboard channel %s", channel.id)
-        config = await run_db(self._get_support_config, guild.id)
         role = self.get_support_admin_role(guild, config)
         role_mention = role.mention if role else "@here"
         embed = discord.Embed(
@@ -258,7 +278,12 @@ class SupportCog(commands.Cog):
             ),
             color=discord.Color.blurple(),
         )
-        await channel.send(embed=embed, view=SupportDashboardView(), allowed_mentions=discord.AllowedMentions(roles=True, everyone=True))
+        message = await channel.send(
+            embed=embed,
+            view=SupportDashboardView(),
+            allowed_mentions=discord.AllowedMentions(roles=True, everyone=True),
+        )
+        await run_db(_set_support_dashboard_message_id, guild.id, message.id)
         logging.info("Support dashboard sent to channel %s in guild %s", channel.id, guild.id)
         return True
 
@@ -746,9 +771,22 @@ def _save_support_config(guild_id, category_id, role_id):
         if not config:
             config = GuildConfig(guild_id=str(guild_id))
             db.add(config)
+        if config.support_category != str(category_id):
+            config.support_dashboard_message_id = None
         config.support_enabled = True
         config.support_category = str(category_id)
         config.support_admin_role = str(role_id)
         db.commit()
+    finally:
+        db.close()
+
+
+def _set_support_dashboard_message_id(guild_id, message_id):
+    db = SessionLocal()
+    try:
+        config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
+        if config:
+            config.support_dashboard_message_id = str(message_id)
+            db.commit()
     finally:
         db.close()

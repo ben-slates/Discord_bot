@@ -4,6 +4,7 @@ from discord import app_commands
 import datetime
 import asyncio
 import logging
+import random
 from zoneinfo import ZoneInfo
 from database import SessionLocal, GuildConfig, UserData, AttendanceLog, CustomLeaderboard
 from utils.db_executor import run_db
@@ -26,6 +27,12 @@ QUOTE_OF_THE_DAY = (
     ("Programs must be written for people to read, and only incidentally for machines to execute.", "Harold Abelson"),
     ("Great things in business are never done by one person; they are done by a team of people.", "Steve Jobs"),
     ("The quieter you become, the more you are able to hear.", "Rumi"),
+    ("Success is the sum of small efforts, repeated day in and day out.", "Robert Collier"),
+    ("The secret of getting ahead is getting started.", "Mark Twain"),
+    ("It always seems impossible until it is done.", "Nelson Mandela"),
+    ("If debugging is the process of removing bugs, then programming must be the process of putting them in.", "Edsger Dijkstra"),
+    ("Talk is cheap. Show me the code.", "Linus Torvalds"),
+    ("A ship in harbor is safe, but that is not what ships are built for.", "John A. Shedd"),
 )
 
 
@@ -141,13 +148,15 @@ class NotificationsCog(commands.Cog):
                 if current_time_str == "08:00" and config.quote_of_day_enabled and config.quote_of_day_channel:
                     channel = guild.get_channel(int(config.quote_of_day_channel))
                     if isinstance(channel, discord.TextChannel):
-                        quote, author = QUOTE_OF_THE_DAY[now.toordinal() % len(QUOTE_OF_THE_DAY)]
+                        quote, author = _choose_quote(config.quote_of_day_last_quote)
                         embed = discord.Embed(title="Quote of the Day", description=f"“{quote}”", color=discord.Color.teal())
                         embed.set_footer(text=author)
                         try:
                             await channel.send(embed=embed)
                         except discord.HTTPException:
                             logging.exception("Failed to send Quote of the Day to channel %s", channel.id)
+                        else:
+                            await run_db(_set_last_quote, config.guild_id, quote)
                 
                 # Nightly Attendance at 23:50
                 if current_time_str == "23:50" and config.attendance_enabled and config.attendance_channel:
@@ -264,6 +273,22 @@ def _fetch_all_configs():
     db = SessionLocal()
     try:
         return db.query(GuildConfig).all()
+    finally:
+        db.close()
+
+
+def _choose_quote(last_quote):
+    choices = [item for item in QUOTE_OF_THE_DAY if item[0] != last_quote]
+    return random.choice(choices or list(QUOTE_OF_THE_DAY))
+
+
+def _set_last_quote(guild_id, quote):
+    db = SessionLocal()
+    try:
+        config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
+        if config:
+            config.quote_of_day_last_quote = quote
+            db.commit()
     finally:
         db.close()
 
