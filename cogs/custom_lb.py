@@ -208,6 +208,7 @@ class FeatureEnableSelectView(SettingsErrorView):
                 discord.SelectOption(label="Support", value="support"),
                 discord.SelectOption(label="Attendance", value="attendance"),
                 discord.SelectOption(label="Welcome Messages", value="welcome"),
+                discord.SelectOption(label="Leveling / XP", value="leveling"),
                 discord.SelectOption(label="Leaderboard", value="leaderboard"),
                 discord.SelectOption(label="Level-Up Announcements", value="level_up_announcements"),
                 discord.SelectOption(label="Verification", value="verification"),
@@ -255,7 +256,7 @@ class FeatureDisableSelectView(SettingsErrorView):
             options=[discord.SelectOption(label=label, value=value) for label, value in [
                 ("Bot Logs", "bot_logs"), ("CVE and News", "cve_and_news"), ("Quote of the Day", "quote_of_day"), ("Support", "support"),
                 ("Attendance", "attendance"), ("Welcome Messages", "welcome"), ("Hall of Fame", "hall_of_fame"),
-                ("Leaderboard", "leaderboard"), ("Level-Up Announcements", "level_up_announcements"),
+                ("Leveling / XP", "leveling"), ("Leaderboard", "leaderboard"), ("Level-Up Announcements", "level_up_announcements"),
                 ("Verification", "verification"), ("Certificate", "certificate"),
             ]],
         )
@@ -591,6 +592,7 @@ def _enable_feature_worker(guild_id, option, channel_id):
             "quote_of_day": ("quote_of_day_enabled", "quote_of_day_channel", "Quote of the Day"),
             "attendance": ("attendance_enabled", "attendance_channel", "Attendance"),
             "welcome": ("welcome_enabled", "welcome_channel", "Welcome messages"),
+            "leveling": ("leveling_enabled", "leveling_channel", "Leveling / XP"),
             "leaderboard": ("leaderboard_enabled", "leaderboard_channel", "Leaderboard"),
             "level_up_announcements": ("level_up_announcements_enabled", "level_up_announcements_channel", "Level-up announcements"),
             "verification": ("verification_enabled", "verification_channel", "Verification"),
@@ -626,6 +628,7 @@ def _disable_feature_worker(guild_id, option):
             "support": ("support_enabled", "support_category", "Support"),
             "attendance": ("attendance_enabled", "attendance_channel", "Attendance"),
             "welcome": ("welcome_enabled", "welcome_channel", "Welcome messages"),
+            "leveling": ("leveling_enabled", "leveling_channel", "Leveling / XP"),
             "hall_of_fame": ("hall_of_fame_enabled", None, "Hall of Fame"),
             "leaderboard": ("leaderboard_enabled", "leaderboard_channel", "Leaderboard"),
             "level_up_announcements": ("level_up_announcements_enabled", "level_up_announcements_channel", "Level-up announcements"),
@@ -736,7 +739,7 @@ class CustomLBCog(commands.Cog):
             title="Bot Settings Panel",
             description=(
                 "Use the buttons below to configure features.\n\n"
-                "**Enable Feature** — enable Bot Logs, CVE/News, Quote of the Day, Support, Attendance, Welcome, Leaderboard, "
+                "**Enable Feature** — enable Bot Logs, CVE/News, Quote of the Day, Support, Attendance, Welcome, Leveling / XP, Leaderboard, "
                 "Level-Up Announcements, or Verification by selecting the feature and channel/category from lists.\n"
                 "**Disable Feature** — disable an enabled feature without changing unrelated settings.\n"
                 "**Enable Certification** — choose the required role and certificate channel.\n"
