@@ -1,4 +1,60 @@
 {
-  "last_flush": "2026-08-29T13:58:45.289130+05:00",
-  "entries": []
+  "last_flush": "2026-10-05T04:39:37.302408+05:00",
+  "entries": [
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-105167",
+      "title": "CVE-2026-105167 - kishor-23 food-waste-management-system donate.php sql injection",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-105167\n  <br />\n  <strong>Published :</strong> Oct. 4, 2026, 11:16 p.m. | 38\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>A vulnerability was determined in kishor-23 food-waste-management-system 411989e3ecb82895e53dca7865f72145f03d7d93/b3a70b2c492dc9904de5be1ad9389bd79b87f82c. The impacted element is an unknown function of the file admin/donate.php. Executing a manipulation of the argument location can lead to sql injection. The attack may be performed from remote. The exploit has been publicly disclosed and may be utilized. This product utilizes a rolling release system for continuous delivery, and as such, version information for affected or updated releases is not disclosed. The project was informed of the problem early through an issue report but has not responded yet.\n  <br />\n  <strong>Severity:</strong> 7.5 | HIGH\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Sun, 04 Oct 2026 23:16:59 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-10-05T04:55:23.620854+05:00",
+      "guild_ids": [
+        "1519026016587223121"
+      ]
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-105220",
+      "title": "CVE-2026-105220 - Twine 2 Desktop through 2.12.0 Arbitrary Code Execution via Imported Story Files",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-105220\n  <br />\n  <strong>Published :</strong> Oct. 4, 2026, 11:16 p.m. | 38\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>Twine 2 desktop through 2.12.0 contains a cross-site scripting vulnerability in importStories() that executes markup from imported story files in the editor window. Attackers can craft a story file whose script calls the twineElectron openWithScratchFile IPC bridge to write and open a .bat file, executing code as the user.\n  <br />\n  <strong>Severity:</strong> 8.5 | HIGH\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Sun, 04 Oct 2026 23:16:59 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-10-05T04:55:23.620854+05:00",
+      "guild_ids": [
+        "1519026016587223121"
+      ]
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-105221",
+      "title": "CVE-2026-105221 - Gist RubyGem before 6.1.0 Disabled TLS Certificate Verification",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-105221\n  <br />\n  <strong>Published :</strong> Oct. 4, 2026, 11:16 p.m. | 38\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>The gist RubyGem before 6.1.0 contains an improper certificate validation vulnerability that allows on-path attackers to intercept HTTPS traffic because http_connection in lib/gist.rb sets VERIFY_NONE. Attackers can present any certificate to read or modify GitHub API traffic, stealing OAuth tokens and login credentials to read and modify the victim's gists.\n  <br />\n  <strong>Severity:</strong> 9.1 | CRITICAL\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Sun, 04 Oct 2026 23:16:59 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-10-05T04:55:23.620854+05:00",
+      "guild_ids": [
+        "1519026016587223121"
+      ]
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-105222",
+      "title": "CVE-2026-105222 - alexpechkarev/google-maps through 12.16 Disabled TLS Certificate Verification via ssl_verify_peer",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-105222\n  <br />\n  <strong>Published :</strong> Oct. 4, 2026, 11:16 p.m. | 38\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>The alexpechkarev/google-maps Laravel package through 12.16 disables TLS certificate verification by default because the bundled config sets ssl_verify_peer to FALSE, which is passed to CURLOPT_SSL_VERIFYPEER. On-path attackers can present any certificate to intercept Google Maps web-service requests, steal the API key from the query string, and tamper with responses.\n  <br />\n  <strong>Severity:</strong> 9.1 | CRITICAL\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Sun, 04 Oct 2026 23:16:59 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-10-05T04:55:23.620854+05:00",
+      "guild_ids": [
+        "1519026016587223121"
+      ]
+    },
+    {
+      "link": "https://cvefeed.io/vuln/detail/CVE-2026-105170",
+      "title": "CVE-2026-105170 - kishor-23 food-waste-management-system Admin Signup signup.php missing authentication",
+      "summary": "<strong>CVE ID :</strong>CVE-2026-105170\n  <br />\n  <strong>Published :</strong> Oct. 4, 2026, 11:30 p.m. | 25\u00a0minutes ago\n  <br />\n  <strong>Description :</strong>A weakness has been identified in kishor-23 food-waste-management-system 411989e3ecb82895e53dca7865f72145f03d7d93/b3a70b2c492dc9904de5be1ad9389bd79b87f82c. Affected is an unknown function of the file admin/signup.php of the component Admin Signup. This manipulation of the argument sign causes missing authentication. The attack can be initiated remotely. The exploit has been made available to the public and could be used for attacks. Continious delivery with rolling releases is used by this product. Therefore, no version details of affected nor updated releases are available. The project was informed of the problem early through an issue report but has not responded yet.\n  <br />\n  <strong>Severity:</strong> 0.0 | NA\n  <br />\n  Visit the link for more details, such as CVSS details, affected products, timeline, and more...",
+      "published": "Sun, 04 Oct 2026 23:30:12 +0000",
+      "source_name": "Latest CVEs",
+      "posted_at": "2026-10-05T04:55:23.620854+05:00",
+      "guild_ids": [
+        "1519026016587223121"
+      ]
+    }
+  ]
 }

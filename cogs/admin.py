@@ -9,6 +9,7 @@ class AdminCog(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="message", description="Admin: send a message to a specified channel")
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(channel="The text, voice, or stage-channel chat to send the message to", content="The message to send")
     async def message(

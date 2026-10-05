@@ -3,7 +3,7 @@ import aiohttp
 import discord
 from discord.ext import commands, tasks
 import feedparser
-from database import SessionLocal, NewsLog, GuildConfig
+from database import SessionLocal, GuildNewsLog, GuildConfig
 from utils.db_executor import run_db_profiled
 from bs4 import BeautifulSoup
 import html
@@ -61,47 +61,53 @@ class NewsCog(commands.Cog):
         now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5)))
         db = SessionLocal()
         try:
+            pending = []
             for entry in entries:
                 link = entry.get("link")
                 if not link:
                     continue
-                exists = db.query(NewsLog).filter_by(link=link).first()
-                if exists:
-                    continue
-                posted_at = entry.get("posted_at")
-                if posted_at:
-                    try:
-                        posted_dt = datetime.datetime.fromisoformat(posted_at)
-                    except ValueError:
-                        posted_dt = now
-                else:
+                try:
+                    posted_dt = datetime.datetime.fromisoformat(entry["posted_at"]) if entry.get("posted_at") else now
+                except ValueError:
                     posted_dt = now
-                db.add(NewsLog(link=link, posted_at=posted_dt))
+                pending.extend((str(guild_id), link, posted_dt) for guild_id in entry.get("guild_ids", []))
+
+            # One lookup for all cached deliveries replaces a remote SELECT
+            # for every entry. This cache flush shares the DB worker pool with
+            # interactive handlers, so reducing round trips is important.
+            if pending:
+                guild_ids = {guild_id for guild_id, _link, _posted_at in pending}
+                links = {link for _guild_id, link, _posted_at in pending}
+                existing = {
+                    (row.guild_id, row.link)
+                    for row in db.query(GuildNewsLog).filter(
+                        GuildNewsLog.guild_id.in_(guild_ids), GuildNewsLog.link.in_(links)
+                    ).all()
+                }
+                db.add_all([
+                    GuildNewsLog(guild_id=guild_id, link=link, posted_at=posted_at)
+                    for guild_id, link, posted_at in pending
+                    if (guild_id, link) not in existing
+                ])
 
             cutoff = now - datetime.timedelta(days=7)
-            old_logs = db.query(NewsLog).filter(NewsLog.posted_at < cutoff).all()
-            for old_log in old_logs:
-                db.delete(old_log)
+            db.query(GuildNewsLog).filter(GuildNewsLog.posted_at < cutoff).delete(synchronize_session=False)
             db.commit()
         finally:
             db.close()
 
         mark_flushed(CACHE_NAME, now)
         return True
-def _news_exists(link: str) -> bool:
-    db = SessionLocal()
-    try:
-        return db.query(NewsLog).filter_by(link=link).first() is not None
-    finally:
-        db.close()
-
-
-def _existing_news_links(links: list[str]) -> set[str]:
+def _existing_news_links(guild_id: str, links: list[str]) -> set[str]:
     if not links:
         return set()
     db = SessionLocal()
     try:
-        return {link for (link,) in db.query(NewsLog.link).filter(NewsLog.link.in_(links)).all()}
+        return {
+            link for (link,) in db.query(GuildNewsLog.link).filter(
+                GuildNewsLog.guild_id == str(guild_id), GuildNewsLog.link.in_(links)
+            ).all()
+        }
     finally:
         db.close()
 
@@ -162,7 +168,17 @@ async def _news_loop(self):
         feed_results = await asyncio.gather(*(fetch_feed(feed_info) for feed_info in FEEDS))
         feed_elapsed = time.perf_counter() - profile_started - config_elapsed
         candidate_entries = []
-        cached_links = {item.get("link") for item in cache_data.get("entries", []) if item.get("link")}
+        cached_guilds_by_link = {}
+        for item in cache_data.get("entries", []):
+            link = item.get("link")
+            if not link:
+                continue
+            # Older cache entries have no guild ownership. They are left out
+            # deliberately: a global cached link must not suppress delivery
+            # to a newly configured guild.
+            cached_guilds_by_link.setdefault(link, set()).update(
+                str(guild_id) for guild_id in item.get("guild_ids", [])
+            )
         for feed_info, feed, elapsed in feed_results:
             if elapsed >= 1:
                 logging.info("News feed %s completed in %.3fs", feed_info["name"], elapsed)
@@ -170,11 +186,22 @@ async def _news_loop(self):
                 continue
             for entry in list(reversed(feed.entries))[-5:]:
                 link = getattr(entry, "link", None)
-                if not link or link in cached_links:
+                if not link:
                     continue
                 candidate_entries.append((feed_info, entry, link))
 
-        persisted_links = await run_db_profiled("news.dedupe", _existing_news_links, [item[2] for item in candidate_entries])
+        dedupe_semaphore = asyncio.Semaphore(4)
+
+        async def load_guild_dedupe(guild_id):
+            async with dedupe_semaphore:
+                return guild_id, await run_db_profiled(
+                    "news.dedupe", _existing_news_links, guild_id,
+                    [item[2] for item in candidate_entries],
+                )
+
+        persisted_by_guild = dict(await asyncio.gather(*(
+            load_guild_dedupe(guild_id) for guild_id, _channel_id in enabled_configs
+        )))
         db_elapsed = time.perf_counter() - profile_started - config_elapsed - feed_elapsed
         pending_sends = []
         send_semaphore = asyncio.Semaphore(5)
@@ -182,20 +209,15 @@ async def _news_loop(self):
             async with send_semaphore:
                 try:
                     await channel.send(embed=embed)
+                    return True
                 except (discord.Forbidden, discord.HTTPException):
                     logging.debug("Unable to post news to channel %s", channel.id, exc_info=True)
+                    return False
 
         for feed_info, entry, link in candidate_entries:
-            if link in persisted_links:
-                continue
             title = getattr(entry, "title", "No Title")
             summary = getattr(entry, "summary", getattr(entry, "description", ""))
             published = getattr(entry, "published", None)
-
-            cache_data.setdefault("entries", []).append({
-                "link": link, "title": title, "summary": summary, "published": published,
-                "source_name": feed_info["name"], "posted_at": now.isoformat(),
-            })
 
             clean_summary = await asyncio.to_thread(_clean_summary, summary)
             embed = discord.Embed(title=title[:256], url=link, description=clean_summary, color=feed_info["color"])
@@ -203,14 +225,28 @@ async def _news_loop(self):
             if published:
                 embed.set_footer(text=published)
 
+            delivered_to = []
             for guild_id, channel_id in enabled_configs:
+                if (
+                    link in persisted_by_guild.get(guild_id, set())
+                    or str(guild_id) in cached_guilds_by_link.get(link, set())
+                ):
+                    continue
                 guild = self.bot.get_guild(int(guild_id))
                 channel = guild.get_channel(int(channel_id)) if guild else None
                 if channel:
-                    pending_sends.append(send_embed(channel, embed))
+                    pending_sends.append((guild_id, send_embed(channel, embed)))
+                    delivered_to.append(guild_id)
+
+            if delivered_to:
+                cache_data.setdefault("entries", []).append({
+                    "link": link, "title": title, "summary": summary, "published": published,
+                    "source_name": feed_info["name"], "posted_at": now.isoformat(),
+                    "guild_ids": delivered_to,
+                })
 
         if pending_sends:
-            await asyncio.gather(*pending_sends)
+            await asyncio.gather(*(send for _guild_id, send in pending_sends))
         send_elapsed = time.perf_counter() - profile_started - config_elapsed - feed_elapsed - db_elapsed
 
         await asyncio.to_thread(save_cache, CACHE_NAME, cache_data)

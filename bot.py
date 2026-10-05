@@ -73,19 +73,38 @@ class RynexBot(commands.Bot):
                     print(f"Loaded extension: {filename}")
                 except Exception as e:
                     print(f"Failed to load extension {filename}: {e}")
-        server_id = os.getenv("SERVER_ID")
-        if server_id:
-            guild = discord.Object(id=int(server_id))
-            self.tree.copy_global_to(guild=guild)
+        # Production commands are global: newly installed guilds do not need
+        # to be added to an environment variable.  Optional DEV_GUILD_IDS
+        # (or the backwards-friendly GUILD_IDS alias) is intentionally only
+        # for rapid development/test command propagation.
+        raw_dev_guild_ids = os.getenv("DEV_GUILD_IDS") or os.getenv("GUILD_IDS") or ""
+        dev_guild_ids = []
+        for value in raw_dev_guild_ids.split(","):
+            value = value.strip()
+            if not value:
+                continue
             try:
-                await self.tree.sync(guild=guild)
-                print(f"Synced commands to guild {server_id}")
-            except Exception as e:
-                print(f"Failed to sync to guild {server_id}: {e}")
-                # await self.tree.sync()
+                dev_guild_ids.append(int(value))
+            except ValueError:
+                logging.warning("Ignoring invalid development guild ID: %r", value)
+
+        if dev_guild_ids:
+            for guild_id in dev_guild_ids:
+                guild = discord.Object(id=guild_id)
+                self.tree.copy_global_to(guild=guild)
+                try:
+                    await self.tree.sync(guild=guild)
+                    logging.info("Synced development commands to guild %s", guild_id)
+                except discord.HTTPException:
+                    logging.exception("Failed to sync development commands to guild %s", guild_id)
         else:
-            # await self.tree.sync()
-            print("Synced globally (skipped due to dev rate limit)")
+            try:
+                await self.tree.sync()
+                logging.info("Synced application commands globally for all guilds")
+            except discord.HTTPException:
+                logging.exception("Failed to sync global application commands")
+            if os.getenv("SERVER_ID"):
+                logging.info("SERVER_ID is no longer used for production command synchronization")
 
         # Start event-loop watchdog to detect blocking operations
         try:

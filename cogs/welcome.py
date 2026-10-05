@@ -12,9 +12,6 @@ from database import GuildConfig, SessionLocal, WelcomeDMDelivery
 from utils.db_executor import run_db
 
 
-RULES_CHANNEL_ID = 1519028752145842339
-INTRODUCTIONS_CHANNEL_ID = 1519251723850612766
-
 def _welcome_channel_config(guild_id: int):
     db = SessionLocal()
     try:
@@ -86,17 +83,16 @@ class WelcomeCog(commands.Cog):
         await self.bot.wait_until_ready()
 
     def _guide_channels(self, guild: discord.Guild):
-        # Prefer each server's own channel names so onboarding works without
-        # manual IDs when the bot is added elsewhere. The existing Rynex IDs
-        # remain only as a fallback for legacy channel names.
+        # Resolve each server's own guide channels by name.  Channel IDs from
+        # another guild must never be used as a fallback here.
         rules = discord.utils.find(
             lambda channel: any(term in channel.name.lower() for term in ("rule", "guideline", "start-here")),
             guild.text_channels,
-        ) or guild.get_channel(RULES_CHANNEL_ID)
+        )
         introductions = discord.utils.find(
             lambda channel: any(term in channel.name.lower() for term in ("intro", "introduction", "introductions", "start-here")),
             guild.text_channels,
-        ) or guild.get_channel(INTRODUCTIONS_CHANNEL_ID)
+        )
         return rules, introductions
 
     def _onboarding_message(self, guild: discord.Guild, member: discord.Member) -> str:

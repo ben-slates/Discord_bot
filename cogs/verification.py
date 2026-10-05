@@ -323,6 +323,7 @@ class VerificationCog(commands.Cog):
         )
 
     @app_commands.command(name="verify-list", description="Admin: view verification records")
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.checks.has_permissions(administrator=True)
     async def verify_list(self, interaction: discord.Interaction):

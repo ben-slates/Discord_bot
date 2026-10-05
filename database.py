@@ -208,7 +208,16 @@ class GuildConfig(Base):
     # Note: legacy `support_feature_enabled` removed; `support_enabled` used instead
 
 class UserData(Base):
-    __tablename__ = "users"
+    """XP state scoped to one Discord guild.
+
+    The legacy ``users`` table used ``user_id`` as its only primary key, which
+    made a member's XP visible in every server that shared this database.  New
+    data lives in ``guild_users`` so the legacy table can be retained intact
+    and migrated safely instead of being altered in-place.
+    """
+
+    __tablename__ = "guild_users"
+    guild_id = Column(String, primary_key=True)
     user_id = Column(BigInteger, primary_key=True)
     xp = Column(Integer, default=0, nullable=False)
     level = Column(Integer, default=1, nullable=False)
@@ -224,6 +233,9 @@ class UserData(Base):
     last_message = Column(String)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))), onupdate=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
+    __table_args__ = (
+        Index("ix_guild_users_guild_xp", "guild_id", "xp"),
+    )
 
 class AttendanceLog(Base):
     __tablename__ = "attendance_logs"
@@ -283,6 +295,16 @@ class NewsLog(Base):
     posted_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
 
 
+class GuildNewsLog(Base):
+    """News delivery history for one guild, rather than globally."""
+
+    __tablename__ = "guild_news_logs"
+    guild_id = Column(String, primary_key=True)
+    link = Column(String, primary_key=True)
+    posted_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
+    __table_args__ = (Index("ix_guild_news_logs_guild_posted", "guild_id", "posted_at"),)
+
+
 class VerificationRecord(Base):
     __tablename__ = "verification_records"
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -310,12 +332,105 @@ class WelcomeDMDelivery(Base):
 Base.metadata.create_all(bind=engine)
 
 
+def _migrate_legacy_xp_data():
+    """Copy one-server XP data into the guild-scoped table once, when safe.
+
+    A legacy ``users`` row has no guild identifier, so it must never be copied
+    into multiple guilds by guesswork.  Automatic migration is therefore only
+    performed when the database has exactly one configured guild.  Operators
+    of an older shared database can set the one-time ``LEGACY_XP_GUILD_ID``
+    environment variable to identify the rightful guild explicitly.
+    """
+    inspector = inspect(engine)
+    if "users" not in inspector.get_table_names() or "guild_users" not in inspector.get_table_names():
+        return
+
+    with engine.begin() as conn:
+        legacy_count = conn.execute(text("SELECT COUNT(*) FROM users")).scalar_one()
+        scoped_count = conn.execute(text("SELECT COUNT(*) FROM guild_users")).scalar_one()
+        if not legacy_count or scoped_count:
+            return
+
+        configured_guilds = [
+            str(row[0]) for row in conn.execute(text("SELECT guild_id FROM guild_config")).all()
+        ]
+        requested_guild = (os.getenv("LEGACY_XP_GUILD_ID") or "").strip()
+        if requested_guild:
+            if requested_guild not in configured_guilds:
+                logging.warning(
+                    "Legacy XP migration skipped: LEGACY_XP_GUILD_ID=%s has no guild_config row",
+                    requested_guild,
+                )
+                return
+            target_guild = requested_guild
+        elif len(configured_guilds) == 1:
+            target_guild = configured_guilds[0]
+        else:
+            logging.warning(
+                "Legacy XP rows were not migrated because they cannot be assigned safely "
+                "to one guild. Set LEGACY_XP_GUILD_ID once to migrate them."
+            )
+            return
+
+        legacy_columns = {column["name"] for column in inspector.get_columns("users")}
+        transferable = [
+            "user_id", "xp", "level", "messages", "voice_minutes", "daily_streak",
+            "reputation", "daily_xp_earned", "daily_text_xp_earned", "daily_voice_xp_earned",
+            "daily_xp_date", "last_daily", "last_message", "created_at", "updated_at",
+        ]
+        if "user_id" not in legacy_columns:
+            logging.error("Legacy XP migration skipped: users.user_id is missing")
+            return
+        defaults = {
+            "xp": "0", "level": "1", "messages": "0", "voice_minutes": "0",
+            "daily_streak": "0", "reputation": "0", "daily_xp_earned": "0",
+            "daily_text_xp_earned": "0", "daily_voice_xp_earned": "0",
+        }
+        column_sql = ", ".join(transferable)
+        select_sql = ", ".join(
+            column if column in legacy_columns else f"{defaults.get(column, 'NULL')} AS {column}"
+            for column in transferable
+        )
+        conn.execute(
+            text(
+                f"INSERT INTO guild_users (guild_id, {column_sql}) "
+                f"SELECT :guild_id, {select_sql} FROM users"
+            ),
+            {"guild_id": target_guild},
+        )
+        logging.info("Migrated %s legacy XP rows into guild %s", legacy_count, target_guild)
+
+
+def _migrate_legacy_news_data():
+    """Copy global news history into the sole existing guild when unambiguous."""
+    inspector = inspect(engine)
+    if "news_logs" not in inspector.get_table_names() or "guild_news_logs" not in inspector.get_table_names():
+        return
+    with engine.begin() as conn:
+        legacy_count = conn.execute(text("SELECT COUNT(*) FROM news_logs")).scalar_one()
+        scoped_count = conn.execute(text("SELECT COUNT(*) FROM guild_news_logs")).scalar_one()
+        guilds = [str(row[0]) for row in conn.execute(text("SELECT guild_id FROM guild_config")).all()]
+        if not legacy_count or scoped_count or len(guilds) != 1:
+            return
+        conn.execute(
+            text(
+                "INSERT INTO guild_news_logs (guild_id, link, posted_at) "
+                "SELECT :guild_id, link, posted_at FROM news_logs"
+            ),
+            {"guild_id": guilds[0]},
+        )
+        logging.info("Migrated %s legacy news rows into guild %s", legacy_count, guilds[0])
+
+
 def ensure_database_columns():
     inspector = inspect(engine)
     if "guild_config" not in inspector.get_table_names():
         return
 
     columns = {column["name"] for column in inspector.get_columns("guild_config")}
+    if "daily_xp_limit" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN daily_xp_limit INTEGER DEFAULT 200"))
     if "main_leaderboard_role_ids" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN main_leaderboard_role_ids VARCHAR"))
@@ -422,20 +537,26 @@ def ensure_database_columns():
     if "level_up_announcements_channel" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN level_up_announcements_channel VARCHAR"))
-    user_columns = {column["name"] for column in inspector.get_columns("users")}
-    if "daily_text_xp_earned" not in user_columns:
+    # ``users`` is a legacy table and is deliberately absent on fresh
+    # multi-guild installations, which use ``guild_users`` from the start.
+    if "users" in inspector.get_table_names():
+        user_columns = {column["name"] for column in inspector.get_columns("users")}
+        if "daily_text_xp_earned" not in user_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN daily_text_xp_earned INTEGER DEFAULT 0"))
+        if "daily_voice_xp_earned" not in user_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN daily_voice_xp_earned INTEGER DEFAULT 0"))
         with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE users ADD COLUMN daily_text_xp_earned INTEGER DEFAULT 0"))
-    if "daily_voice_xp_earned" not in user_columns:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE users ADD COLUMN daily_voice_xp_earned INTEGER DEFAULT 0"))
+            conn.execute(text("UPDATE users SET daily_text_xp_earned = 0 WHERE daily_text_xp_earned IS NULL"))
+            conn.execute(text("UPDATE users SET daily_voice_xp_earned = 0 WHERE daily_voice_xp_earned IS NULL"))
     with engine.begin() as conn:
-        conn.execute(text("UPDATE users SET daily_text_xp_earned = 0 WHERE daily_text_xp_earned IS NULL"))
-        conn.execute(text("UPDATE users SET daily_voice_xp_earned = 0 WHERE daily_voice_xp_earned IS NULL"))
         conn.execute(text("UPDATE guild_config SET daily_xp_limit = 200 WHERE daily_xp_limit IS NULL OR daily_xp_limit != 200"))
 
 
 ensure_database_columns()
+_migrate_legacy_xp_data()
+_migrate_legacy_news_data()
 
 
 def get_db():

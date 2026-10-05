@@ -728,6 +728,7 @@ class CustomLBCog(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="setting", description="Admin: open the bot feature settings panel")
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.checks.has_permissions(administrator=True)
     async def setting(self, interaction: discord.Interaction):
@@ -1262,6 +1263,7 @@ class CustomLBCog(commands.Cog):
             db.close()
 
     @app_commands.command(name="hall_of_fame", description="Admin:Add users to the Hall of Fame and generate an image")
+    @app_commands.guild_only()
     @app_commands.choices(
         template=[
             app_commands.Choice(name="Red Team", value="red_team"),
@@ -1394,7 +1396,9 @@ class CustomLBCog(commands.Cog):
             ui_db = SessionLocal()
             try:
                 for user in users:
-                    user_record = ui_db.query(UserData).filter_by(user_id=int(user.id)).first()
+                    user_record = ui_db.query(UserData).filter_by(
+                        guild_id=str(guild.id), user_id=int(user.id)
+                    ).first()
                     if user_record:
                         user_stats.append((user.display_name, user_record.xp, user_record.level))
                     else:
@@ -1434,6 +1438,7 @@ class CustomLBCog(commands.Cog):
             db.close()
 
     @app_commands.command(name="hall_of_fame_overall", description="Admin:Announce department progress for the Hall of Fame")
+    @app_commands.guild_only()
     @app_commands.choices(
         department=[
             app_commands.Choice(name="Red Team", value="red_team"),

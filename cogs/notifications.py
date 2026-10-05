@@ -107,7 +107,7 @@ class NotificationsCog(commands.Cog):
                         allowed_role_ids = await run_db(_get_main_lb_role_ids, config.guild_id)
                         top_users = []
                         # Fetch top users from DB in thread
-                        user_rows = await run_db(_fetch_top_users, 1000)
+                        user_rows = await run_db(_fetch_top_users, config.guild_id, 1000)
                         for user in user_rows:
                             member = guild.get_member(int(user['user_id']))
                             if not member or member.bot:
@@ -292,10 +292,10 @@ def _set_last_quote(guild_id, quote):
     finally:
         db.close()
 
-def _fetch_top_users(limit=1000):
+def _fetch_top_users(guild_id, limit=1000):
     db = SessionLocal()
     try:
-        rows = db.query(UserData).order_by(UserData.xp.desc()).limit(limit).all()
+        rows = db.query(UserData).filter_by(guild_id=str(guild_id)).order_by(UserData.xp.desc()).limit(limit).all()
         return [{'user_id': r.user_id, 'xp': r.xp, 'level': r.level} for r in rows]
     finally:
         db.close()
@@ -317,7 +317,7 @@ def _fetch_custom_lbs(guild_id):
 def _fetch_all_users(guild_id):
     db = SessionLocal()
     try:
-        rows = db.query(UserData).all()
+        rows = db.query(UserData).filter_by(guild_id=str(guild_id)).all()
         return [{'user_id': r.user_id, 'xp': r.xp, 'level': r.level} for r in rows]
     finally:
         db.close()

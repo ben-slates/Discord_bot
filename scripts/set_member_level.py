@@ -21,15 +21,15 @@ def normalized(value: str | None) -> str:
     return (value or "").strip().casefold()
 
 
-def set_level_in_db(user_id: int, target_level: int):
+def set_level_in_db(guild_id: int, user_id: int, target_level: int):
     from database import SessionLocal, UserData
     from cogs.leveling import calculate_required_xp
 
     db = SessionLocal()
     try:
-        user = db.query(UserData).filter_by(user_id=int(user_id)).first()
+        user = db.query(UserData).filter_by(guild_id=str(guild_id), user_id=int(user_id)).first()
         if user is None:
-            user = UserData(user_id=int(user_id))
+            user = UserData(guild_id=str(guild_id), user_id=int(user_id))
             db.add(user)
 
         user.level = int(target_level)
@@ -41,13 +41,12 @@ def set_level_in_db(user_id: int, target_level: int):
         db.close()
 
 
-async def run_discord_lookup(username: str, target_level: int):
+async def run_discord_lookup(guild_id: int, username: str, target_level: int):
     import discord
 
     token = os.getenv("BOT_TOKEN")
-    server_id = os.getenv("SERVER_ID")
-    if not token or not server_id:
-        raise RuntimeError("BOT_TOKEN and SERVER_ID must be set in .env to resolve username")
+    if not token:
+        raise RuntimeError("BOT_TOKEN must be set in .env to resolve username")
 
     intents = discord.Intents.none()
     intents.guilds = True
@@ -59,9 +58,9 @@ async def run_discord_lookup(username: str, target_level: int):
     async def on_ready():
         try:
             print("Connected. Looking up member and updating the database...", flush=True)
-            guild = client.get_guild(int(server_id))
+            guild = client.get_guild(int(guild_id))
             if guild is None:
-                raise RuntimeError(f"Bot cannot access configured server {server_id}")
+                raise RuntimeError(f"Bot cannot access guild {guild_id}")
 
             target = normalized(username)
             matches = []
@@ -85,7 +84,7 @@ async def run_discord_lookup(username: str, target_level: int):
                 )
 
             member = matches[0]
-            set_level_in_db(member.id, target_level)
+            set_level_in_db(guild_id, member.id, target_level)
         finally:
             await client.close()
 
@@ -94,6 +93,7 @@ async def run_discord_lookup(username: str, target_level: int):
 
 def main():
     parser = argparse.ArgumentParser(description="Set one Discord member's level and XP using the configured bot and database.")
+    parser.add_argument("--guild-id", type=int, required=True, help="Guild whose XP data to update")
     parser.add_argument("--user-id", type=int, help="Discord user id to update directly")
     parser.add_argument("--username", type=str, help="Username (or partial) to resolve via the bot")
     parser.add_argument("--level", type=int, default=DEFAULT_LEVEL, help="Target level to set (default 30)")
@@ -101,7 +101,7 @@ def main():
 
     if args.user_id:
         try:
-            set_level_in_db(args.user_id, args.level)
+            set_level_in_db(args.guild_id, args.user_id, args.level)
             return
         except Exception as e:
             print(f"Failed to set level by id: {e}", file=sys.stderr)
@@ -109,7 +109,7 @@ def main():
 
     username = args.username or DEFAULT_USERNAME
     try:
-        asyncio.run(run_discord_lookup(username, args.level))
+        asyncio.run(run_discord_lookup(args.guild_id, username, args.level))
     except Exception as error:
         print(f"Level update failed: {error}", file=sys.stderr)
         raise SystemExit(1)

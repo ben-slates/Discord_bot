@@ -241,6 +241,9 @@ class AttendanceCog(commands.Cog):
         self.bot = bot
         # in-memory cache: guild_id (str) -> set of user ids who sent a message today
         self._message_activity = defaultdict(set)
+        # A member can only receive one attendance row per guild/day. Avoid a
+        # remote DB lookup for every later message after that fact is known.
+        self._attendance_marked_today = defaultdict(set)
         self.daily_cleanup.start()
         self.dashboard_check.start()
         self.bot.add_view(AttendanceDashboardView(self))
@@ -307,6 +310,7 @@ class AttendanceCog(commands.Cog):
         # Clear today's in-memory message activity at the start of the daily cleanup
         try:
             self._message_activity.clear()
+            self._attendance_marked_today.clear()
         except Exception:
             pass
 
@@ -326,10 +330,15 @@ class AttendanceCog(commands.Cog):
                     if str(entry.user_id) not in current_member_id_strings:
                         db.delete(entry)
 
-                existing_user_ids = {str(user_id[0]) for user_id in db.query(UserData.user_id).all()}
+                existing_user_ids = {
+                    str(user_id[0])
+                    for user_id in db.query(UserData.user_id).filter_by(guild_id=str(guild.id)).all()
+                }
                 for user_id in existing_user_ids:
                     if user_id not in current_member_id_strings:
-                        user_record = db.query(UserData).filter_by(user_id=int(user_id)).first()
+                        user_record = db.query(UserData).filter_by(
+                            guild_id=str(guild.id), user_id=int(user_id)
+                        ).first()
                         if user_record:
                             db.delete(user_record)
 
@@ -350,7 +359,7 @@ class AttendanceCog(commands.Cog):
         try:
             config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
             if not config or not config.attendance_enabled:
-                return
+                return False
                 
             today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))).strftime('%Y-%m-%d')
             log = db.query(AttendanceLog).filter_by(guild_id=str(guild_id), user_id=str(user_id), date=today).first()
@@ -359,6 +368,7 @@ class AttendanceCog(commands.Cog):
                 new_log = AttendanceLog(guild_id=str(guild_id), user_id=str(user_id), date=today)
                 db.add(new_log)
                 db.commit()
+            return True
         finally:
             db.close()
 
@@ -401,11 +411,12 @@ class AttendanceCog(commands.Cog):
                 (AttendanceLog.date == today),
             ).filter(GuildConfig.guild_id == str(guild_id)).first() or (None, None)
             if not config or not config.attendance_enabled:
-                return
+                return False
             if not log:
                 new_log = AttendanceLog(guild_id=str(guild_id), user_id=str(author_id), date=today)
                 db.add(new_log)
                 db.commit()
+            return True
         finally:
             db.close()
 
@@ -420,8 +431,15 @@ class AttendanceCog(commands.Cog):
         except Exception:
             pass
 
+        marked = self._attendance_marked_today[str(message.guild.id)]
+        if message.author.id in marked:
+            return
         started = time.perf_counter()
-        await run_db_profiled("attendance.message", self._mark_message_attendance, message.guild.id, message.author.id)
+        attendance_enabled = await run_db_profiled(
+            "attendance.message", self._mark_message_attendance, message.guild.id, message.author.id
+        )
+        if attendance_enabled:
+            marked.add(message.author.id)
         elapsed = time.perf_counter() - started
         if elapsed >= 0.5:
             logging.warning("Attendance message DB timing: db_executor=%.3fs", elapsed)
@@ -566,6 +584,7 @@ class AttendanceCog(commands.Cog):
 
 
     @app_commands.command(name="setting-attendance", description="Admin: open attendance settings")
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.checks.has_permissions(administrator=True)
     async def setting_attendance(self, interaction: discord.Interaction):

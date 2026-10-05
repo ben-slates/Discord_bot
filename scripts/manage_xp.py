@@ -3,10 +3,10 @@
 
 Usage examples:
   # Set user by Discord ID to level 30 (xp auto-calculated)
-  python scripts/manage_xp.py --user-id 123456789012345678 --set-level 30
+  python scripts/manage_xp.py --guild-id 123456789012345678 --user-id 123456789012345678 --set-level 30
 
-  # Set user by username (requires BOT_TOKEN + SERVER_ID in .env)
-  python scripts/manage_xp.py --username "aghga asfand" --set-level 30
+  # Set user by username in one guild (requires BOT_TOKEN)
+  python scripts/manage_xp.py --guild-id 123456789012345678 --username "aghga asfand" --set-level 30
 
   # Enforce daily XP cap across all users (caps daily_xp_earned to 100)
   python scripts/manage_xp.py --enforce-cap
@@ -38,10 +38,10 @@ def xp_for_level(level: int) -> int:
     return calculate_required_xp(level - 1)
 
 
-def set_user_level_by_id(user_id: int, target_level: int, xp_value: int | None = None):
+def set_user_level_by_id(guild_id: int, user_id: int, target_level: int, xp_value: int | None = None):
     db = SessionLocal()
     try:
-        user = db.query(UserData).filter_by(user_id=int(user_id)).first()
+        user = db.query(UserData).filter_by(guild_id=str(guild_id), user_id=int(user_id)).first()
         if not user:
             print(f"User {user_id} not found in database.")
             return False
@@ -79,11 +79,13 @@ def find_user_id_by_name(bot_token: str, guild_id: str, name_query: str) -> int 
     return None
 
 
-def enforce_daily_cap(max_cap: int = 100):
+def enforce_daily_cap(guild_id: int, max_cap: int = 100):
     db = SessionLocal()
     try:
         updated = 0
-        for user in db.query(UserData).filter(UserData.daily_xp_earned != None).all():
+        for user in db.query(UserData).filter(
+            UserData.guild_id == str(guild_id), UserData.daily_xp_earned != None
+        ).all():
             try:
                 if getattr(user, "daily_xp_earned", 0) is None:
                     continue
@@ -102,8 +104,9 @@ def enforce_daily_cap(max_cap: int = 100):
 
 def main():
     parser = argparse.ArgumentParser(description="Manage user XP and levels")
+    parser.add_argument("--guild-id", type=int, required=True, help="Guild whose XP data to manage")
     parser.add_argument("--user-id", type=int, help="Discord user id to target")
-    parser.add_argument("--username", type=str, help="Partial username/display name to search (requires BOT_TOKEN + SERVER_ID in .env)")
+    parser.add_argument("--username", type=str, help="Partial username/display name to search in --guild-id (requires BOT_TOKEN)")
     parser.add_argument("--set-level", type=int, help="Set target level for the user")
     parser.add_argument("--xp", type=int, help="Optional explicit XP value to set")
     parser.add_argument("--enforce-cap", action="store_true", help="Enforce daily XP cap (default 100) across all users")
@@ -112,7 +115,7 @@ def main():
     args = parser.parse_args()
 
     if args.enforce_cap:
-        enforce_daily_cap(args.cap_value)
+        enforce_daily_cap(args.guild_id, args.cap_value)
 
     if args.set_level:
         target_level = args.set_level
@@ -120,11 +123,10 @@ def main():
         uid = args.user_id
         if not uid and args.username:
             BOT_TOKEN = os.getenv("BOT_TOKEN")
-            GUILD_ID = os.getenv("SERVER_ID")
-            if not BOT_TOKEN or not GUILD_ID:
-                print("To resolve username to id you must set BOT_TOKEN and SERVER_ID in .env")
+            if not BOT_TOKEN:
+                print("To resolve a username, set BOT_TOKEN in .env")
                 sys.exit(1)
-            uid = find_user_id_by_name(BOT_TOKEN, GUILD_ID, args.username)
+            uid = find_user_id_by_name(BOT_TOKEN, str(args.guild_id), args.username)
             if not uid:
                 print("No member matched the provided username query.")
                 sys.exit(1)
@@ -133,7 +135,7 @@ def main():
             print("No user specified. Use --user-id or --username plus --set-level")
             sys.exit(1)
 
-        set_user_level_by_id(uid, target_level, xp_value)
+        set_user_level_by_id(args.guild_id, uid, target_level, xp_value)
 
 
 if __name__ == "__main__":

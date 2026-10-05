@@ -5,6 +5,7 @@ import asyncio
 import time
 import logging
 import datetime
+from sqlalchemy import and_
 from database import SessionLocal, GuildConfig, UserData, CustomLeaderboard, AttendanceLog
 from utils.db_executor import run_db, run_db_profiled
 from utils.diag import instrument_async
@@ -26,7 +27,6 @@ def _fetch_guild_config(guild_id):
     finally:
         db.close()
 
-DEFAULT_LEVELING_CHANNEL_ID = 1519264254178623488
 DAILY_TEXT_XP_CAP = 100
 DAILY_VOICE_XP_CAP = 100
 DAILY_XP_CAP = DAILY_TEXT_XP_CAP + DAILY_VOICE_XP_CAP
@@ -53,10 +53,10 @@ class LevelingCog(commands.Cog):
     def cog_unload(self):
         self.voice_xp_loop.cancel()
 
-    def get_user(self, db, user_id):
-        user = db.query(UserData).filter_by(user_id=int(user_id)).first()
+    def get_user(self, db, guild_id, user_id):
+        user = db.query(UserData).filter_by(guild_id=str(guild_id), user_id=int(user_id)).first()
         if not user:
-            user = UserData(user_id=int(user_id))
+            user = UserData(guild_id=str(guild_id), user_id=int(user_id))
             db.add(user)
             db.commit()
             db.refresh(user)
@@ -67,10 +67,12 @@ class LevelingCog(commands.Cog):
         db = SessionLocal()
         try:
             config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
-            user = self.get_user(db, user_id)
-            higher_xp = db.query(UserData).filter(UserData.xp > user.xp).count()
+            user = self.get_user(db, guild_id, user_id)
+            higher_xp = db.query(UserData).filter(UserData.guild_id == str(guild_id), UserData.xp > user.xp).count()
             # Ties use the stable user id to make the displayed position deterministic.
-            tied_before = db.query(UserData).filter(UserData.xp == user.xp, UserData.user_id < user.user_id).count()
+            tied_before = db.query(UserData).filter(
+                UserData.guild_id == str(guild_id), UserData.xp == user.xp, UserData.user_id < user.user_id
+            ).count()
             return (
                 user.level, user.xp, higher_xp + tied_before + 1, user.daily_xp_earned,
                 DAILY_XP_CAP,
@@ -84,7 +86,10 @@ class LevelingCog(commands.Cog):
         try:
             # Fetch the guild settings and this user's row in one round trip.
             config, user = db.query(GuildConfig, UserData).outerjoin(
-                UserData, UserData.user_id == int(author_id)
+                UserData, and_(
+                    UserData.user_id == int(author_id),
+                    UserData.guild_id == str(guild_id),
+                )
             ).filter(GuildConfig.guild_id == str(guild_id)).first() or (None, None)
             if not config or not config.leveling_enabled:
                 return False, 0, 0, None
@@ -94,7 +99,7 @@ class LevelingCog(commands.Cog):
 
             user_was_created = user is None
             if user_was_created:
-                user = UserData(user_id=int(author_id))
+                user = UserData(guild_id=str(guild_id), user_id=int(author_id))
                 db.add(user)
             
             today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))).strftime('%Y-%m-%d')
@@ -152,8 +157,8 @@ class LevelingCog(commands.Cog):
                 if not config or not getattr(config, "level_up_announcements_enabled", False):
                     return
 
-                target_channel_id = getattr(config, "level_up_announcements_channel", None) or leveling_channel or str(DEFAULT_LEVELING_CHANNEL_ID)
-                ch = message.guild.get_channel(int(target_channel_id))
+                target_channel_id = getattr(config, "level_up_announcements_channel", None) or leveling_channel
+                ch = message.guild.get_channel(int(target_channel_id)) if target_channel_id else None
                 if ch:
                     await self.send_level_up_announcement(message.author, new_level, current_xp, ch)
             except Exception:
@@ -167,6 +172,7 @@ class LevelingCog(commands.Cog):
             )
 
     @app_commands.command(name="rank", description="Check your rank")
+    @app_commands.guild_only()
     async def rank(self, interaction: discord.Interaction, member: discord.User = None):
         db = SessionLocal()
         try:
@@ -187,9 +193,9 @@ class LevelingCog(commands.Cog):
             except Exception:
                 member_obj = None
 
-            user = self.get_user(db, member.id)
+            user = self.get_user(db, interaction.guild_id, member.id)
             
-            all_users = db.query(UserData).order_by(UserData.xp.desc()).all()
+            all_users = db.query(UserData).filter_by(guild_id=str(interaction.guild_id)).order_by(UserData.xp.desc()).all()
             rank_pos = None
             for idx, u in enumerate(all_users, start=1):
                 if u.user_id == member.id:
@@ -222,6 +228,7 @@ class LevelingCog(commands.Cog):
             db.close()
 
     @app_commands.command(name="leaderboard", description="View top XP earners")
+    @app_commands.guild_only()
     async def leaderboard(self, interaction: discord.Interaction):
         db = SessionLocal()
         try:
@@ -239,7 +246,7 @@ class LevelingCog(commands.Cog):
                 scores = []
                 channel = interaction.guild.get_channel(interaction.channel_id)
                 if channel:
-                    all_users = db.query(UserData).all()
+                    all_users = db.query(UserData).filter_by(guild_id=str(interaction.guild_id)).all()
                     user_map = {u.user_id: u for u in all_users}
                     
                     att_logs = db.query(AttendanceLog).filter_by(guild_id=str(interaction.guild_id)).all()
@@ -280,7 +287,7 @@ class LevelingCog(commands.Cog):
             
             allowed_role_ids = get_main_leaderboard_role_ids(db, interaction.guild_id)
             ranked_users = []
-            for user in db.query(UserData).order_by(UserData.xp.desc()).all():
+            for user in db.query(UserData).filter_by(guild_id=str(interaction.guild_id)).order_by(UserData.xp.desc()).all():
                 discord_user = interaction.guild.get_member(user.user_id)
                 if not discord_user or discord_user.bot:
                     continue
@@ -313,6 +320,7 @@ class LevelingCog(commands.Cog):
 
 
     @app_commands.command(name="rankcard", description="Generate a rank card image.")
+    @app_commands.guild_only()
     async def rankcard(self, interaction: discord.Interaction, member: discord.User = None):
         db = SessionLocal()
         try:
@@ -356,7 +364,7 @@ class LevelingCog(commands.Cog):
         try:
             today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))).strftime('%Y-%m-%d')
             for guild_id, user_id in voice_users:
-                user = self.get_user(db, user_id)
+                user = self.get_user(db, guild_id, user_id)
                 if not user.daily_xp_date or str(user.daily_xp_date) != today:
                     user.daily_xp_date = today
                     user.daily_xp_earned = 0
@@ -437,8 +445,8 @@ class LevelingCog(commands.Cog):
                             config = await run_db(_fetch_guild_config, guild.id)
                             if not config or not getattr(config, "level_up_announcements_enabled", False):
                                 continue
-                            target_ch_id = getattr(config, "level_up_announcements_channel", None) or ch_id or str(DEFAULT_LEVELING_CHANNEL_ID)
-                            ch = guild.get_channel(int(target_ch_id))
+                            target_ch_id = getattr(config, "level_up_announcements_channel", None) or ch_id
+                            ch = guild.get_channel(int(target_ch_id)) if target_ch_id else None
                             if ch:
                                 await self.send_level_up_announcement(member, new_level, current_xp, ch)
                         except Exception:
