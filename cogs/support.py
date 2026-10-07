@@ -587,7 +587,7 @@ class SupportCog(commands.Cog):
         try:
             ticket = await run_db(_close_ticket, interaction.channel.id)
             if ticket:
-                owner = interaction.guild.get_member(int(ticket.owner_id))
+                owner = interaction.guild.get_member(int(ticket["owner_id"]))
                 if owner:
                     try:
                         await interaction.channel.set_permissions(owner, send_messages=False, read_messages=True)
@@ -637,7 +637,7 @@ class SupportCog(commands.Cog):
         try:
             ticket = await run_db(_reopen_ticket, interaction.channel.id)
             if ticket:
-                owner = interaction.guild.get_member(int(ticket.owner_id))
+                owner = interaction.guild.get_member(int(ticket["owner_id"]))
                 if owner:
                     await interaction.channel.set_permissions(owner, send_messages=True, read_messages=True)
                 
@@ -695,28 +695,42 @@ class SupportCog(commands.Cog):
             if not open_tickets:
                 await interaction.followup.send(" No open tickets found.")
                 return
-            
-            count = 0
-            for ticket in open_tickets:
-                try:
-                    channel = interaction.guild.get_channel(int(ticket.channel_id))
-                    if channel:
-                        owner = interaction.guild.get_member(int(ticket.owner_id))
-                        if owner:
-                            await channel.set_permissions(owner, send_messages=False, read_messages=True)
-                        
-                        name_suffix = owner.name if owner else "unknown"
-                        await channel.edit(name=f"closed-{name_suffix}")
-                    count += 1
-                except:
-                    pass
-                    
-            await run_db(_close_tickets, [ticket.id for ticket in open_tickets])
-            await interaction.followup.send(f" Successfully closed {count} open ticket(s).")
+            # Acknowledge promptly; channel permission/rename calls are remote
+            # Discord operations and should not make the command look timed out.
+            await interaction.followup.send(f"Closing {len(open_tickets)} open ticket(s)…")
+            asyncio.create_task(
+                self._close_all_ticket_channels(interaction.guild, open_tickets),
+                name=f"close-all-tickets-{interaction.guild_id}",
+            )
         except Exception as e:
             await interaction.followup.send(f" Error: {e}")
         finally:
             pass
+
+    async def _close_all_ticket_channels(self, guild, tickets):
+        """Close ticket channels concurrently without blocking command acknowledgement."""
+        semaphore = asyncio.Semaphore(3)
+
+        async def close_one(ticket):
+            async with semaphore:
+                channel = guild.get_channel(int(ticket["channel_id"]))
+                if not channel:
+                    return False
+                try:
+                    owner = guild.get_member(int(ticket["owner_id"]))
+                    if owner:
+                        await channel.set_permissions(owner, send_messages=False, read_messages=True)
+                    await channel.edit(name=f"closed-{owner.name if owner else 'unknown'}")
+                    return True
+                except (discord.Forbidden, discord.HTTPException):
+                    logging.exception("Failed to close ticket channel %s in guild %s", channel.id, guild.id)
+                    return False
+
+        results = await asyncio.gather(*(close_one(ticket) for ticket in tickets))
+        # Preserve the existing command's semantics: every ticket selected as
+        # open is closed in the database even if Discord rejected an edit.
+        await run_db(_close_tickets, [ticket["id"] for ticket in tickets])
+        logging.info("[Guild %s] /closeall closed %s/%s ticket channels", guild.id, sum(results), len(tickets))
 
 async def setup(bot):
     cog = SupportCog(bot)
@@ -761,7 +775,7 @@ def _close_ticket(channel_id):
         ticket.status = "closed"
         ticket.closed_at = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5)))
         db.commit()
-        return ticket
+        return {"id": ticket.id, "owner_id": ticket.owner_id, "channel_id": ticket.channel_id}
     finally:
         db.close()
 
@@ -775,7 +789,7 @@ def _reopen_ticket(channel_id):
         ticket.status = "open"
         ticket.closed_at = None
         db.commit()
-        return ticket
+        return {"id": ticket.id, "owner_id": ticket.owner_id, "channel_id": ticket.channel_id}
     finally:
         db.close()
 
@@ -783,7 +797,10 @@ def _reopen_ticket(channel_id):
 def _get_open_tickets(guild_id):
     db = SessionLocal()
     try:
-        return db.query(Ticket).filter_by(guild_id=str(guild_id), status="open").all()
+        return [
+            {"id": ticket.id, "channel_id": ticket.channel_id, "owner_id": ticket.owner_id}
+            for ticket in db.query(Ticket).filter_by(guild_id=str(guild_id), status="open").all()
+        ]
     finally:
         db.close()
 
