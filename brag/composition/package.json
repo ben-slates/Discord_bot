@@ -1,0 +1,10 @@
+{
+  "name": "rynex-discord-bot-brag",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx --yes hyperframes preview",
+    "check": "npx --yes hyperframes check",
+    "render": "npx --yes hyperframes render"
+  }
+}

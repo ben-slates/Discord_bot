@@ -1,0 +1,626 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Rynex Security Discord Bot</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #0e1015;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        color: #f2f3f5;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        overflow: hidden;
+        background: #0e1015;
+      }
+
+      /* Subtle ambient glow */
+      .ambient-glow {
+        position: absolute;
+        width: 1000px;
+        height: 1000px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(0, 212, 255, 0.12) 0%, rgba(14, 16, 21, 0) 70%);
+        top: 50%;
+        left: 50%;
+        margin-left: -500px;
+        margin-top: -500px;
+        pointer-events: none;
+      }
+
+      .scene {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 60px 100px;
+      }
+
+      /* Scene 1: Hook */
+      .s1-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 36px;
+        text-align: center;
+        max-width: 1400px;
+      }
+      .s1-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 28px;
+        border-radius: 999px;
+        border: 1px solid #00d4ff;
+        background: rgba(0, 212, 255, 0.1);
+        color: #00d4ff;
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+      }
+      .s1-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #00d4ff;
+      }
+      .s1-title {
+        font-size: 76px;
+        font-weight: 800;
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+        color: #ffffff;
+      }
+      .s1-reveal-badge {
+        background: #00d4ff;
+        color: #000000;
+        font-size: 82px;
+        font-weight: 900;
+        letter-spacing: 0.05em;
+        padding: 16px 54px;
+        border-radius: 16px;
+        box-shadow: 0 10px 40px rgba(0, 212, 255, 0.5);
+        opacity: 0;
+      }
+
+      /* Scene 2: Dual Core (Rank Card + Gemini AI Ticket) */
+      .s2-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 48px;
+        width: 1540px;
+        align-items: center;
+      }
+      .feature-card-box {
+        background: #161922;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 20px;
+        padding: 36px;
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        opacity: 0;
+      }
+      .card-header-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .card-tag {
+        font-size: 15px;
+        font-weight: 700;
+        padding: 6px 16px;
+        border-radius: 999px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+      .tag-cyan { background: rgba(0, 212, 255, 0.15); color: #00d4ff; border: 1px solid #00d4ff; }
+      .tag-purple { background: rgba(88, 101, 242, 0.15); color: #9ba8ff; border: 1px solid #5865f2; }
+      .card-headline {
+        font-size: 34px;
+        font-weight: 800;
+        color: #ffffff;
+      }
+      .card-desc {
+        font-size: 18px;
+        color: #c5cad1;
+        line-height: 1.5;
+      }
+
+      /* Mock Rank Card UI */
+      .rank-card-mock {
+        position: relative;
+        height: 220px;
+        border-radius: 14px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        display: flex;
+        align-items: center;
+        padding: 24px 32px;
+        gap: 24px;
+      }
+      .rank-card-mock img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        opacity: 0.45;
+      }
+      .rank-avatar {
+        position: relative;
+        width: 90px;
+        height: 90px;
+        border-radius: 50%;
+        background: #00d4ff;
+        border: 3px solid #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 32px;
+        font-weight: 800;
+        color: #000000;
+        flex-shrink: 0;
+      }
+      .rank-info {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        flex: 1;
+      }
+      .rank-user {
+        font-size: 26px;
+        font-weight: 800;
+        color: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .rank-xp-bar-bg {
+        width: 100%;
+        height: 16px;
+        background: rgba(0, 0, 0, 0.6);
+        border-radius: 8px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      .rank-xp-fill {
+        height: 100%;
+        width: 78%;
+        background: #00d4ff;
+        border-radius: 8px;
+      }
+
+      /* Mock AI Ticket UI */
+      .ticket-mock {
+        background: #0d0f14;
+        border: 1px solid #2a2e39;
+        border-radius: 12px;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .ticket-msg {
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+      }
+      .ticket-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: #5865f2;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #ffffff;
+        font-weight: 700;
+        flex-shrink: 0;
+      }
+      .ticket-avatar-ai {
+        background: #00d4ff;
+        color: #000000;
+      }
+      .ticket-content {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .ticket-author {
+        font-size: 15px;
+        font-weight: 700;
+        color: #ffffff;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .ai-pill {
+        background: rgba(0, 212, 255, 0.2);
+        color: #00d4ff;
+        font-size: 11px;
+        font-weight: 800;
+        padding: 2px 8px;
+        border-radius: 4px;
+      }
+      .ticket-text {
+        font-size: 15px;
+        color: #d1d5db;
+        line-height: 1.4;
+      }
+
+      /* Scene 3: Feeds & Architecture */
+      .s3-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 44px;
+        width: 1540px;
+      }
+      .s3-header {
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .s3-title {
+        font-size: 54px;
+        font-weight: 800;
+        color: #ffffff;
+      }
+      .s3-sub {
+        font-size: 22px;
+        color: #00d4ff;
+        font-weight: 600;
+      }
+      .s3-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 32px;
+        width: 100%;
+      }
+      .s3-card {
+        background: #161922;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 16px;
+        padding: 32px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+        opacity: 0;
+      }
+      .s3-icon {
+        font-size: 36px;
+      }
+      .s3-card-title {
+        font-size: 26px;
+        font-weight: 800;
+        color: #ffffff;
+      }
+      .s3-card-desc {
+        font-size: 17px;
+        color: #c5cad1;
+        line-height: 1.5;
+      }
+
+      /* Scene 4: Outro */
+      .s4-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: 32px;
+        max-width: 1400px;
+      }
+      .s4-logo {
+        width: 120px;
+        height: 120px;
+        object-fit: contain;
+      }
+      .s4-title {
+        font-size: 76px;
+        font-weight: 900;
+        letter-spacing: -0.02em;
+        color: #ffffff;
+      }
+      .s4-subtitle {
+        font-size: 30px;
+        font-weight: 600;
+        color: #00d4ff;
+      }
+      .s4-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        justify-content: center;
+      }
+      .s4-badge {
+        background: #161922;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        padding: 12px 28px;
+        border-radius: 12px;
+        font-size: 18px;
+        font-weight: 700;
+        color: #ffffff;
+      }
+      .s4-cta {
+        margin-top: 10px;
+        font-size: 20px;
+        font-weight: 800;
+        color: #00d4ff;
+        background: rgba(0, 212, 255, 0.15);
+        border: 1px solid #00d4ff;
+        padding: 12px 36px;
+        border-radius: 999px;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="18"
+      data-width="1920"
+      data-height="1080"
+    >
+      <!-- Audio Tracks -->
+      <audio id="bgm" src="assets/music/happy-beats-business-moves-vol-1-by-ende-dot-app.mp3" data-start="0" data-duration="18"></audio>
+      <audio id="sfx-impact" src="assets/sfx/impactSoft_medium_000.ogg" data-start="2.0"></audio>
+      <audio id="sfx-click" src="assets/sfx/click1.ogg" data-start="4.2"></audio>
+      <audio id="sfx-drop" src="assets/sfx/drop_001.ogg" data-start="9.0"></audio>
+
+      <div class="ambient-glow"></div>
+
+      <!-- ================= SCENE 1: THE HOOK (0s - 3.5s) ================= -->
+      <div class="scene clip" id="scene-hook" data-start="0" data-duration="3.5" data-track-index="0">
+        <div class="s1-wrap" id="s1-wrap">
+          <div class="s1-badge" id="s1-badge">
+            <span class="s1-dot"></span>
+            Discord Community Infrastructure
+          </div>
+          <h1 class="s1-title" id="s1-title">
+            Still managing your Discord with 10 different bots?
+          </h1>
+          <div class="s1-reveal-badge" id="s1-reveal">
+            MEET RYNEX SECURITY.
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= SCENE 2: RANK CARDS & AI SUPPORT (3.5s - 8.5s) ================= -->
+      <div class="scene clip" id="scene-core" data-start="3.5" data-duration="5.0" data-track-index="0">
+        <div class="s2-grid">
+          <!-- Card 1: Leveling -->
+          <div class="feature-card-box" id="fcard-leveling">
+            <div class="card-header-row">
+              <span class="card-tag tag-cyan">Gamification Engine</span>
+              <span style="font-size: 15px; font-weight: 700; color: #f1c40f;">★ LEVEL 42</span>
+            </div>
+            <h2 class="card-headline">Pillow-Rendered Rank Cards</h2>
+            <div class="rank-card-mock">
+              <img src="assets/images/rank_bg.webp" alt="Background" data-start="3.5" data-duration="5" />
+              <div class="rank-avatar">R</div>
+              <div class="rank-info">
+                <div class="rank-user">
+                  <span>RynexSentinel</span>
+                  <span style="font-size: 18px; color: #00d4ff;">#1 ON LEADERBOARD</span>
+                </div>
+                <div class="rank-xp-bar-bg">
+                  <div class="rank-xp-fill"></div>
+                </div>
+                <div style="font-size: 14px; color: #ffffff; display: flex; justify-content: space-between;">
+                  <span>XP: 14,850 / 19,000</span>
+                  <span>Voice XP Active</span>
+                </div>
+              </div>
+            </div>
+            <p class="card-desc">Dynamic image generation for level-ups, attendance summaries, and server rank leaderboards.</p>
+          </div>
+
+          <!-- Card 2: Gemini AI Support -->
+          <div class="feature-card-box" id="fcard-ai">
+            <div class="card-header-row">
+              <span class="card-tag tag-purple">AI Powered</span>
+              <span style="font-size: 15px; font-weight: 700; color: #2ecc71;">● INSTANT RESOLUTION</span>
+            </div>
+            <h2 class="card-headline">Gemini-Assisted Tickets</h2>
+            <div class="ticket-mock">
+              <div class="ticket-msg">
+                <div class="ticket-avatar">U</div>
+                <div class="ticket-content">
+                  <div class="ticket-author">Member #4829</div>
+                  <div class="ticket-text">"How do I verify attendance for the CTF workshop?"</div>
+                </div>
+              </div>
+              <div class="ticket-msg">
+                <div class="ticket-avatar ticket-avatar-ai">AI</div>
+                <div class="ticket-content">
+                  <div class="ticket-author">
+                    <span>Rynex AI</span>
+                    <span class="ai-pill">Google Gemini</span>
+                  </div>
+                  <div class="ticket-text">"Attendance is logged automatically when you join voice or type in event channels!"</div>
+                </div>
+              </div>
+            </div>
+            <p class="card-desc">Automated ticket channels, transcripts, persistent buttons, and Google Gemini AI responses.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= SCENE 3: SECURITY FEEDS & ARCHITECTURE (8.5s - 14.0s) ================= -->
+      <div class="scene clip" id="scene-feeds" data-start="8.5" data-duration="5.5" data-track-index="0">
+        <div class="s3-wrap">
+          <div class="s3-header">
+            <h2 class="s3-title">BUILT FOR HIGH-SECURITY COMMUNITIES</h2>
+            <p class="s3-sub">Automated Threat Intel &middot; Resilient DB Worker Architecture</p>
+          </div>
+          <div class="s3-grid">
+            <div class="s3-card" id="s3-c1">
+              <div class="s3-icon">🛡️</div>
+              <h3 class="s3-card-title">Live CVE &amp; News Feeds</h3>
+              <p class="s3-card-desc">Scheduled automated broadcasts from The Hacker News and National Vulnerability Database directly to your feed.</p>
+            </div>
+            <div class="s3-card" id="s3-c2">
+              <div class="s3-icon">⚡</div>
+              <h3 class="s3-card-title">Zero-Lag DB Executor</h3>
+              <p class="s3-card-desc">Bounded 6-worker SQLAlchemy executor guarantees the Discord gateway and REST loops never freeze under load.</p>
+            </div>
+            <div class="s3-card" id="s3-c3">
+              <div class="s3-icon">📊</div>
+              <h3 class="s3-card-title">Daily Attendance Logs</h3>
+              <p class="s3-card-desc">Full daily presence metrics from text messages and qualifying voice activity with automatic CSV/chart exports.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= SCENE 4: OUTRO (14.0s - 18.0s) ================= -->
+      <div class="scene clip" id="scene-outro" data-start="14.0" data-duration="4.0" data-track-index="0">
+        <div class="s4-wrap" id="s4-wrap">
+          <img src="assets/images/logo_rynex.png" alt="Rynex Logo" class="s4-logo" id="s4-logo" data-start="14" data-duration="4" />
+          <h1 class="s4-title" id="s4-title">Rynex Security Discord Bot</h1>
+          <p class="s4-subtitle" id="s4-subtitle">The all-in-one engine for elite tech communities.</p>
+          <div class="s4-badges" id="s4-badges">
+            <div class="s4-badge">Python 3.13</div>
+            <div class="s4-badge">discord.py</div>
+            <div class="s4-badge">Google Gemini AI</div>
+            <div class="s4-badge">SQLAlchemy Async</div>
+            <div class="s4-badge">Open Source</div>
+          </div>
+          <div class="s4-cta" id="s4-cta">
+            github.com/ben-slates/Discord_bot
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const tl = gsap.timeline({ paused: true });
+
+      const bgm = document.getElementById("bgm");
+      if (bgm) bgm.volume = 0.75;
+
+      // ================= SCENE 1 ANIMATIONS =================
+      tl.fromTo("#s1-badge", 
+        { opacity: 0, y: -20 }, 
+        { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 
+        0.2
+      );
+
+      tl.fromTo("#s1-title", 
+        { opacity: 0, y: 30, scale: 0.96 }, 
+        { opacity: 1, y: 0, scale: 1, duration: 0.6, ease: "back.out(1.2)" }, 
+        0.5
+      );
+
+      tl.fromTo("#s1-reveal", 
+        { opacity: 0, scale: 1.8, rotate: -4 }, 
+        { opacity: 1, scale: 1, rotate: 0, duration: 0.5, ease: "back.out(2.0)" }, 
+        2.0
+      );
+
+      tl.to("#s1-wrap", { opacity: 0, scale: 0.95, duration: 0.35, ease: "power2.in" }, 3.15);
+
+      // ================= SCENE 2 ANIMATIONS =================
+      tl.fromTo("#fcard-leveling", 
+        { opacity: 0, x: -40 }, 
+        { opacity: 1, x: 0, duration: 0.55, ease: "power3.out" }, 
+        3.55
+      );
+
+      tl.fromTo("#fcard-ai", 
+        { opacity: 0, x: 40 }, 
+        { opacity: 1, x: 0, duration: 0.55, ease: "power3.out" }, 
+        3.75
+      );
+
+      tl.to(".feature-card-box", { opacity: 0, scale: 0.95, duration: 0.35, ease: "power2.in" }, 8.15);
+
+      // ================= SCENE 3 ANIMATIONS =================
+      tl.fromTo(".s3-header", 
+        { opacity: 0, y: -25 }, 
+        { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 
+        8.6
+      );
+
+      tl.fromTo("#s3-c1", 
+        { opacity: 0, y: 35 }, 
+        { opacity: 1, y: 0, duration: 0.45, ease: "back.out(1.2)" }, 
+        8.85
+      );
+      tl.fromTo("#s3-c2", 
+        { opacity: 0, y: 35 }, 
+        { opacity: 1, y: 0, duration: 0.45, ease: "back.out(1.2)" }, 
+        9.5
+      );
+      tl.fromTo("#s3-c3", 
+        { opacity: 0, y: 35 }, 
+        { opacity: 1, y: 0, duration: 0.45, ease: "back.out(1.2)" }, 
+        10.15
+      );
+
+      tl.to(".s3-wrap", { opacity: 0, scale: 0.95, duration: 0.35, ease: "power2.in" }, 13.65);
+
+      // ================= SCENE 4 ANIMATIONS =================
+      tl.fromTo("#s4-logo", 
+        { opacity: 0, scale: 0.5 }, 
+        { opacity: 1, scale: 1, duration: 0.55, ease: "back.out(1.6)" }, 
+        14.1
+      );
+
+      tl.fromTo("#s4-title", 
+        { opacity: 0, y: 25 }, 
+        { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 
+        14.4
+      );
+
+      tl.fromTo("#s4-subtitle", 
+        { opacity: 0, y: 20 }, 
+        { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 
+        14.65
+      );
+
+      tl.fromTo(".s4-badge", 
+        { opacity: 0, scale: 0.9, y: 15 }, 
+        { opacity: 1, scale: 1, y: 0, duration: 0.4, stagger: 0.1, ease: "power2.out" }, 
+        14.9
+      );
+
+      tl.fromTo("#s4-cta", 
+        { opacity: 0, y: 15 }, 
+        { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, 
+        15.5
+      );
+
+      // Register timeline
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>

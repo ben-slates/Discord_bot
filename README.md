@@ -4,6 +4,16 @@ Rynex Security is a `discord.py` community bot with leveling, attendance, suppor
 
 The bot preserves Discord responsiveness by keeping synchronous SQLAlchemy work in a bounded DB worker executor. Discord Gateway, Discord REST calls, and RSS HTTP requests remain asynchronous.
 
+## 🚀 Launch Video & Showcase
+
+[![Rynex Security Discord Bot Showcase](brag/brag.jpg)](brag/brag.mp4)
+
+Watch the 18-second launch video: [`brag/brag.mp4`](brag/brag.mp4)
+- **High-Performance Gamification**: Pillow-rendered rank cards, voice XP tracking, and dynamic leaderboards.
+- **Gemini AI Support Desk**: Automated ticket channels with persistent resolve buttons and Google Gemini AI responses.
+- **Real-Time Threat Intelligence**: Automated broadcasts from The Hacker News and Latest CVEs.
+- **Zero-Lag Architecture**: Synchronous SQLAlchemy work is offloaded to a bounded 6-worker DB executor to preserve Discord gateway responsiveness.
+
 ## Features
 
 - Message and voice XP, ranks, image rank cards, level-up cards, and leaderboards.

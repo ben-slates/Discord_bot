@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "historyId": "dc66ee5c-3523-473b-b413-585aaa1ee9c8",
+  "currentRevision": null,
+  "pendingChanges": false,
+  "files": {
+    "assets/images/logo_rynex.png": {
+      "hash": "6884fee23e18596772e5ab9b5ec54c588247e285d206e8570a4a322a72bd1b25",
+      "content": "/home/admin/.cache/hyperframes/history/dc66ee5c-3523-473b-b413-585aaa1ee9c8/blobs/68/6884fee23e18596772e5ab9b5ec54c588247e285d206e8570a4a322a72bd1b25"
+    },
+    "assets/images/rank_bg.webp": {
+      "hash": "9cfcce5fa2044fe71f5fac8d1f4a8b226138453ae6dd5c0fa43f8d4b0a2b78de",
+      "content": "/home/admin/.cache/hyperframes/history/dc66ee5c-3523-473b-b413-585aaa1ee9c8/blobs/9c/9cfcce5fa2044fe71f5fac8d1f4a8b226138453ae6dd5c0fa43f8d4b0a2b78de"
+    },
+    "assets/sfx/click1.ogg": {
+      "hash": "59175ac17cd49a68dd736285738441287636112a84a6f7ce0d89921bda5a5360",
+      "content": "/home/admin/.cache/hyperframes/history/dc66ee5c-3523-473b-b413-585aaa1ee9c8/blobs/59/59175ac17cd49a68dd736285738441287636112a84a6f7ce0d89921bda5a5360"
+    },
+    "assets/sfx/drop_001.ogg": {
+      "hash": "692ee3a6f1821402ca649ff735bee9591dc4846c8098fc7d6a90fd15fa57c1af",
+      "content": "/home/admin/.cache/hyperframes/history/dc66ee5c-3523-473b-b413-585aaa1ee9c8/blobs/69/692ee3a6f1821402ca649ff735bee9591dc4846c8098fc7d6a90fd15fa57c1af"
+    },
+    "assets/sfx/impactSoft_medium_000.ogg": {
+      "hash": "7d3ba0bb5e60a11b5d3e558c141303dcf494256675fbf753c0d252d2cf0481e3",
+      "content": "/home/admin/.cache/hyperframes/history/dc66ee5c-3523-473b-b413-585aaa1ee9c8/blobs/7d/7d3ba0bb5e60a11b5d3e558c141303dcf494256675fbf753c0d252d2cf0481e3"
+    },
+    "hyperframes.json": {
+      "hash": "53dbce1e19aa713cbb12ee0bc4d206143b45ab15e6ffbfcaa8f69572d4d24d50",
+      "content": "/home/admin/.cache/hyperframes/history/dc66ee5c-3523-473b-b413-585aaa1ee9c8/blobs/53/53dbce1e19aa713cbb12ee0bc4d206143b45ab15e6ffbfcaa8f69572d4d24d50"
+    },
+    "index.html": {
+      "hash": "2ada8c63cd720f6435ab3b821486c59f2391c7fa7a9f54ee00530234a4942d59",
+      "content": "/home/admin/.cache/hyperframes/history/dc66ee5c-3523-473b-b413-585aaa1ee9c8/blobs/2a/2ada8c63cd720f6435ab3b821486c59f2391c7fa7a9f54ee00530234a4942d59"
+    },
+    "package.json": {
+      "hash": "e794bc75026f68b355ef5d4e01a1083da87fd35f9cdbb9f1f1b0d6c11b7deaa0",
+      "content": "/home/admin/.cache/hyperframes/history/dc66ee5c-3523-473b-b413-585aaa1ee9c8/blobs/e7/e794bc75026f68b355ef5d4e01a1083da87fd35f9cdbb9f1f1b0d6c11b7deaa0"
+    },
+    "assets/music/happy-beats-business-moves-vol-1-by-ende-dot-app.mp3": {
+      "hash": "aa56ab1cdcbef6b05566c6a7c114323078580ccf6a740a9e6c6b6c4b40b4389f",
+      "content": "/home/admin/.cache/hyperframes/history/dc66ee5c-3523-473b-b413-585aaa1ee9c8/blobs/aa/aa56ab1cdcbef6b05566c6a7c114323078580ccf6a740a9e6c6b6c4b40b4389f"
+    }
+  },
+  "revisions": {},
+  "checks": {
+    "latest": {
+      "revision": null,
+      "id": "ac24471e-0bed-402c-b27e-bd720a023060"
+    },
+    "revisions": {},
+    "unversioned": [
+      {
+        "id": "ac24471e-0bed-402c-b27e-bd720a023060",
+        "scope": "project",
+        "report": "/home/admin/Discord_bot/brag/composition/.hyperframes/artifacts/checks/ac24471e-0bed-402c-b27e-bd720a023060.json",
+        "metadata": {
+          "ok": true,
+          "browserSkipped": false,
+          "options": {
+            "samples": 9,
+            "atTransitions": false,
+            "maxIssues": 80,
+            "collapseStatic": true,
+            "tolerance": 2,
+            "timeout": 3000,
+            "contrast": true,
+            "strict": false,
+            "snapshots": false,
+            "browserGpuMode": "auto"
+          }
+        },
+        "createdAt": 1792347434094,
+        "contentHash": "793e946282fdca228efb12fa37265fe9e10dec2be06b30412180acb8252993a0",
+        "revision": null,
+        "inputFingerprint": "c6979044eba97ac80ebf0b15987c127c668fc1fa3092a62336097d971d0f73de",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      }
+    ]
+  },
+  "snapshots": {
+    "latest": null,
+    "revisions": {},
+    "unversioned": []
+  },
+  "renders": {
+    "latest": {
+      "id": "151d4058-2d63-4383-b622-d2aed3988c17",
+      "completedAt": 1792347474541,
+      "output": "/home/admin/Discord_bot/brag/brag.mp4",
+      "status": "completed",
+      "revision": null
+    },
+    "retainedRevisions": []
+  },
+  "pendingArtifactCleanup": []
+}
