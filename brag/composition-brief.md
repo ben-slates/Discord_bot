@@ -1,7 +1,7 @@
-# Hyperframes Composition Brief: Rynex Security Discord Bot
+# Hyperframes Composition Brief: Rynex Technologies Discord Bot
 
 ## Objective
-Create a short 18-second launch video for Rynex Security Discord Bot.
+Create a short 18-second launch video for Rynex Technologies Discord Bot.
 
 ## Output
 - Composition directory: `/home/admin/Discord_bot/brag/composition/`

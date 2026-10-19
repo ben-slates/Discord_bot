@@ -1,5 +1,5 @@
 [Unit]
-Description=Rynex Security Discord Bot
+Description=Rynex Technologies Discord Bot
 After=network.target
 
 [Service]

@@ -114,6 +114,7 @@ class LevelingCog(commands.Cog):
                 max(DAILY_TEXT_XP_CAP - user.daily_text_xp_earned, 0),
                 max(DAILY_XP_CAP - user.daily_xp_earned, 0),
             )
+            user.last_active_at = datetime.datetime.now(datetime.timezone.utc)
             if xp_to_award:
                 user.xp += xp_to_award
                 user.daily_text_xp_earned += xp_to_award
@@ -129,10 +130,7 @@ class LevelingCog(commands.Cog):
                 
                 db.commit()
                 return level_up, new_level, user.xp, config.leveling_channel
-            if user_was_created:
-                # Preserve the existing behavior: a valid new user row is created
-                # even when no XP can be awarded because a daily cap is already met.
-                db.commit()
+            db.commit()
             return False, 0, 0, None
         finally:
             db.close()
@@ -376,6 +374,7 @@ class LevelingCog(commands.Cog):
                     max(DAILY_VOICE_XP_CAP - user.daily_voice_xp_earned, 0),
                     max(DAILY_XP_CAP - user.daily_xp_earned, 0),
                 )
+                user.last_active_at = datetime.datetime.now(datetime.timezone.utc)
                 if xp_to_award:
                     user.xp += xp_to_award
                     user.daily_voice_xp_earned += xp_to_award

@@ -196,6 +196,11 @@ class GuildConfig(Base):
     quote_of_day_enabled = Column(Boolean, default=False)
     quote_of_day_channel = Column(String, nullable=True)
     quote_of_day_last_quote = Column(String, nullable=True)
+    quote_of_day_last_date = Column(String, nullable=True)
+    # Clean Server
+    clean_server_enabled = Column(Boolean, default=False)
+    clean_server_channel = Column(String, nullable=True)
+    clean_server_last_run = Column(String, nullable=True)
     # Verification
     verification_enabled = Column(Boolean, default=False)
     verification_channel = Column(String, nullable=True)
@@ -230,6 +235,7 @@ class UserData(Base):
     daily_voice_xp_earned = Column(Integer, default=0, nullable=False)
     daily_xp_date = Column(String, nullable=True, default=None)
     last_daily = Column(DateTime(timezone=True))
+    last_active_at = Column(DateTime(timezone=True))
     last_message = Column(String)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))), onupdate=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
@@ -455,6 +461,18 @@ def ensure_database_columns():
     if "quote_of_day_last_quote" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN quote_of_day_last_quote VARCHAR"))
+    if "quote_of_day_last_date" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN quote_of_day_last_date VARCHAR"))
+    if "clean_server_enabled" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN clean_server_enabled BOOLEAN DEFAULT FALSE"))
+    if "clean_server_channel" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN clean_server_channel VARCHAR"))
+    if "clean_server_last_run" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN clean_server_last_run VARCHAR"))
     if "support_admin_role" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN support_admin_role VARCHAR"))
@@ -550,6 +568,11 @@ def ensure_database_columns():
         with engine.begin() as conn:
             conn.execute(text("UPDATE users SET daily_text_xp_earned = 0 WHERE daily_text_xp_earned IS NULL"))
             conn.execute(text("UPDATE users SET daily_voice_xp_earned = 0 WHERE daily_voice_xp_earned IS NULL"))
+    if "guild_users" in inspector.get_table_names():
+        guild_user_columns = {column["name"] for column in inspector.get_columns("guild_users")}
+        if "last_active_at" not in guild_user_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE guild_users ADD COLUMN last_active_at TIMESTAMP"))
     with engine.begin() as conn:
         conn.execute(text("UPDATE guild_config SET daily_xp_limit = 200 WHERE daily_xp_limit IS NULL OR daily_xp_limit != 200"))
 

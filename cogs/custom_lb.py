@@ -20,7 +20,7 @@ HALL_OF_FAME_TEMPLATES = {
         "label": "Red Team",
         "title": "Hall of Fame Updated",
         "description": (
-            "The Hall of Fame has been updated to recognize Red Team members who have demonstrated outstanding commitment and consistent contributions to Rynex Security.\n\n"
+            "The Hall of Fame has been updated to recognize Red Team members who have demonstrated outstanding commitment and consistent contributions to Rynex Technologies.\n\n"
             "Hall of Fame rankings are determined by each member's overall participation, including assigned tasks, meeting attendance, collaboration, community engagement, and accumulated XP."
         ),
         "field_name": "Current Red Team Hall of Fame",
@@ -30,7 +30,7 @@ HALL_OF_FAME_TEMPLATES = {
         "label": "Blue Team",
         "title": "Hall of Fame Updated",
         "description": (
-            "The Hall of Fame has been updated to recognize Blue Team members who have demonstrated outstanding commitment and consistent contributions to Rynex Security.\n\n"
+            "The Hall of Fame has been updated to recognize Blue Team members who have demonstrated outstanding commitment and consistent contributions to Rynex Technologies.\n\n"
             "Hall of Fame rankings are determined by each member's overall participation, including assigned tasks, meeting attendance, collaboration, community engagement, and accumulated XP."
         ),
         "field_name": "Current Blue Team Hall of Fame",
@@ -40,7 +40,7 @@ HALL_OF_FAME_TEMPLATES = {
         "label": "Custom",
         "title": "Hall of Fame Updated",
         "description": (
-            "The Hall of Fame has been updated to recognize {name} members who have demonstrated outstanding commitment and consistent contributions to Rynex Security.\n\n"
+            "The Hall of Fame has been updated to recognize {name} members who have demonstrated outstanding commitment and consistent contributions to Rynex Technologies.\n\n"
             "Hall of Fame rankings are determined by each member's overall participation, including assigned tasks, meeting attendance, collaboration, community engagement, and accumulated XP."
         ),
         "field_name": "Current {name} Hall of Fame",
@@ -50,7 +50,7 @@ HALL_OF_FAME_TEMPLATES = {
         "label": "Overall",
         "title": "Hall of Fame Updated",
         "description": (
-            "The Hall of Fame has been updated to recognize department progress across Rynex Security.\n\n"
+            "The Hall of Fame has been updated to recognize department progress across Rynex Technologies.\n\n"
             "Select the department that showed the strongest progress and consistency, then review the current standings below."
         ),
         "field_name": "Department Progress",
@@ -70,7 +70,7 @@ class FeatureEnableModal(discord.ui.Modal, title="Enable Feature"):
         self.cog = cog
         self.feature = discord.ui.TextInput(
             label="Feature name",
-            placeholder="verification, support, attendance, leaderboard...",
+            placeholder="verification, support, attendance, clean_server...",
             required=True,
             max_length=40,
         )
@@ -109,7 +109,7 @@ class FeatureDisableModal(discord.ui.Modal, title="Disable Feature"):
         self.cog = cog
         self.feature = discord.ui.TextInput(
             label="Feature name",
-            placeholder="verification, support, attendance, certificate...",
+            placeholder="verification, support, attendance, clean_server...",
             required=True,
             max_length=40,
         )
@@ -212,6 +212,7 @@ class FeatureEnableSelectView(SettingsErrorView):
                 discord.SelectOption(label="Leaderboard", value="leaderboard"),
                 discord.SelectOption(label="Level-Up Announcements", value="level_up_announcements"),
                 discord.SelectOption(label="Verification", value="verification"),
+                discord.SelectOption(label="Clean Server", value="clean_server"),
             ],
         )
         self.channel = discord.ui.ChannelSelect(
@@ -257,7 +258,7 @@ class FeatureDisableSelectView(SettingsErrorView):
                 ("Bot Logs", "bot_logs"), ("CVE and News", "cve_and_news"), ("Quote of the Day", "quote_of_day"), ("Support", "support"),
                 ("Attendance", "attendance"), ("Welcome Messages", "welcome"), ("Hall of Fame", "hall_of_fame"),
                 ("Leveling / XP", "leveling"), ("Leaderboard", "leaderboard"), ("Level-Up Announcements", "level_up_announcements"),
-                ("Verification", "verification"), ("Certificate", "certificate"),
+                ("Verification", "verification"), ("Certificate", "certificate"), ("Clean Server", "clean_server"),
             ]],
         )
         self.add_item(self.feature)
@@ -472,6 +473,7 @@ class FeatureTestView(SettingsErrorView):
                 discord.SelectOption(label="Leaderboard", value="leaderboard"),
                 discord.SelectOption(label="Level-Up Announcements", value="level_up_announcements"),
                 discord.SelectOption(label="Quote of the Day", value="quote_of_day"),
+                discord.SelectOption(label="Clean Server", value="clean_server"),
             ],
         )
         self.add_item(self.feature)
@@ -566,14 +568,14 @@ def build_hall_of_fame_overall_content(department_key, department_name=None):
     if department_name and department_name.strip():
         label = department_name.strip()
         description = (
-            f"The Hall of Fame has been updated to recognize {label} department progress across Rynex Security.\n\n"
+            f"The Hall of Fame has been updated to recognize {label} department progress across Rynex Technologies.\n\n"
             f"{label} is showing strong consistency, collaboration, and contribution across assigned tasks, meeting attendance, community engagement, and accumulated XP."
         )
         return label, description
 
     label = HALL_OF_FAME_DEPARTMENTS.get(department_key, department_key)
     description = (
-        f"The Hall of Fame has been updated to recognize {label} department progress across Rynex Security.\n\n"
+        f"The Hall of Fame has been updated to recognize {label} department progress across Rynex Technologies.\n\n"
         f"{label} is showing strong consistency, collaboration, and contribution across assigned tasks, meeting attendance, community engagement, and accumulated XP."
     )
     return label, description
@@ -596,6 +598,7 @@ def _enable_feature_worker(guild_id, option, channel_id):
             "leaderboard": ("leaderboard_enabled", "leaderboard_channel", "Leaderboard"),
             "level_up_announcements": ("level_up_announcements_enabled", "level_up_announcements_channel", "Level-up announcements"),
             "verification": ("verification_enabled", "verification_channel", "Verification"),
+            "clean_server": ("clean_server_enabled", "clean_server_channel", "Clean Server"),
         }
         entry = fields.get(option)
         if not entry:
@@ -634,6 +637,7 @@ def _disable_feature_worker(guild_id, option):
             "level_up_announcements": ("level_up_announcements_enabled", "level_up_announcements_channel", "Level-up announcements"),
             "verification": ("verification_enabled", "verification_channel", "Verification"),
             "certificate": ("certificate_enabled", "certificate_channel", "Certificate generation"),
+            "clean_server": ("clean_server_enabled", "clean_server_channel", "Clean Server"),
         }
         entry = fields.get(option)
         if not entry:
@@ -655,6 +659,8 @@ def _disable_feature_worker(guild_id, option):
             config.hall_of_fame_role_name = None
             config.hall_of_fame_announcement_channel = None
             config.hall_of_fame_warning_channel = None
+        if option == "clean_server":
+            config.clean_server_last_run = None
         db.commit()
         return label, None
     finally:
@@ -714,6 +720,7 @@ def _feature_test_config_worker(guild_id, option):
             "leaderboard": ("leaderboard_enabled", "leaderboard_channel", "Leaderboard"),
             "level_up_announcements": ("level_up_announcements_enabled", "level_up_announcements_channel", "Level-up announcements"),
             "quote_of_day": ("quote_of_day_enabled", "quote_of_day_channel", "Quote of the Day"),
+            "clean_server": ("clean_server_enabled", "clean_server_channel", "Clean Server"),
         }
         entry = fields.get(option)
         if not entry:
@@ -740,7 +747,7 @@ class CustomLBCog(commands.Cog):
             description=(
                 "Use the buttons below to configure features.\n\n"
                 "**Enable Feature** — enable Bot Logs, CVE/News, Quote of the Day, Support, Attendance, Welcome, Leveling / XP, Leaderboard, "
-                "Level-Up Announcements, or Verification by selecting the feature and channel/category from lists.\n"
+                "Level-Up Announcements, Verification, or Clean Server by selecting the feature and channel/category from lists.\n"
                 "**Disable Feature** — disable an enabled feature without changing unrelated settings.\n"
                 "**Enable Certification** — choose the required role and certificate channel.\n"
                 "**Enable Hall of Fame** — choose the role, announcement channel, and warning channel.\n"
@@ -799,6 +806,17 @@ class CustomLBCog(commands.Cog):
                 )
                 embed.set_footer(text="Alan Kay")
                 await channel.send(embed=embed)
+            elif option == "clean_server":
+                from cogs.notifications import run_clean_server
+                db = SessionLocal()
+                try:
+                    cfg = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+                finally:
+                    db.close()
+                removed = await run_clean_server(interaction.guild, cfg)
+                await channel.send(f"🧹 Clean Server test executed by {interaction.user.mention}. Checked all users, removed {len(removed)} inactive member(s).")
+                await interaction.followup.send(f"Clean Server test complete. Removed {len(removed)} inactive member(s).", ephemeral=True)
+                return
             else:
                 await channel.send(f"✅ {label} test message from {interaction.user.mention}")
         except discord.Forbidden:
@@ -982,6 +1000,16 @@ class CustomLBCog(commands.Cog):
                 await interaction.followup.send(f"Verification enabled for {channel.mention}.", ephemeral=True)
                 return
 
+            if option.value == "clean_server":
+                if not isinstance(channel, discord.TextChannel):
+                    await interaction.followup.send("Clean Server must use a text channel for reports.", ephemeral=True)
+                    return
+                config.clean_server_enabled = True
+                config.clean_server_channel = str(channel.id)
+                db.commit()
+                await interaction.followup.send(f"Clean Server enabled with logs sent to {channel.mention}.", ephemeral=True)
+                return
+
             await interaction.followup.send("That option is not supported yet.", ephemeral=True)
         finally:
             db.close()
@@ -1107,6 +1135,14 @@ class CustomLBCog(commands.Cog):
                 await interaction.followup.send("Certificate generation disabled. Existing verification records were preserved.", ephemeral=True)
                 return
 
+            if option.value == "clean_server":
+                config.clean_server_enabled = False
+                config.clean_server_channel = None
+                config.clean_server_last_run = None
+                db.commit()
+                await interaction.followup.send("Clean Server disabled.", ephemeral=True)
+                return
+
             await interaction.followup.send("That option is not supported yet.", ephemeral=True)
         finally:
             db.close()
@@ -1203,6 +1239,21 @@ class CustomLBCog(commands.Cog):
                     return
 
                 await interaction.response.send_message("Level-up test card sent successfully.", ephemeral=True)
+                return
+
+            if option.value == "clean_server":
+                if not config or not config.clean_server_enabled or not config.clean_server_channel:
+                    await interaction.response.send_message("Clean Server is not enabled for this server yet.", ephemeral=True)
+                    return
+                channel = interaction.guild.get_channel(int(config.clean_server_channel))
+                if not channel:
+                    await interaction.response.send_message("The configured Clean Server log channel could not be found.", ephemeral=True)
+                    return
+                from cogs.notifications import run_clean_server
+                await interaction.response.defer(ephemeral=True)
+                removed = await run_clean_server(interaction.guild, config)
+                await channel.send(f"🧹 Clean Server test executed by {interaction.user.mention}. Checked all users, removed {len(removed)} inactive member(s).")
+                await interaction.followup.send(f"Clean Server test complete. Removed {len(removed)} inactive member(s).", ephemeral=True)
                 return
 
             await interaction.response.send_message("That option is not supported yet.", ephemeral=True)

@@ -352,7 +352,7 @@ def render(
     # ---- header banner --------------------------------------------------
     header_bounds = (510, 40, W - 40, 180)
     glass_panel(card, header_bounds, RADIUS_PANEL)
-    section_label(draw, (560, 68), "RYNEX SECURITY")
+    section_label(draw, (560, 68), "RYNEX TECHNOLOGIES")
     draw.text((558, 100), "Hall of Fame", font=font(58), fill=TEXT_HEADING)
 
     # ---- table container --------------------------------------------------

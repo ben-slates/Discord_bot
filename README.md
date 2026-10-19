@@ -1,12 +1,12 @@
-# Rynex Security Discord Bot
+# Rynex Technologies Discord Bot
 
-Rynex Security is a `discord.py` community bot with leveling, attendance, support tickets backed by Gemini, scheduled news/CVE posts, configurable leaderboards, welcome cards, Hall of Fame announcements, and administrative configuration commands.
+Rynex Technologies is a `discord.py` community bot with leveling, attendance, support tickets backed by Gemini, scheduled news/CVE posts, configurable leaderboards, welcome cards, Hall of Fame announcements, and administrative configuration commands.
 
 The bot preserves Discord responsiveness by keeping synchronous SQLAlchemy work in a bounded DB worker executor. Discord Gateway, Discord REST calls, and RSS HTTP requests remain asynchronous.
 
 ## 🚀 Launch Video & Showcase
 
-[![Rynex Security Discord Bot Showcase](brag/brag.jpg)](brag/brag.mp4)
+[![Rynex Technologies Discord Bot Showcase](brag/brag.jpg)](brag/brag.mp4)
 
 Watch the 18-second launch video: [`brag/brag.mp4`](brag/brag.mp4)
 - **High-Performance Gamification**: Pillow-rendered rank cards, voice XP tracking, and dynamic leaderboards.
@@ -26,7 +26,11 @@ Watch the 18-second launch video: [`brag/brag.mp4`](brag/brag.mp4)
 
 - Scheduled CVE/news posting from The Hacker News and Latest CVEs.
 
-- Per-guild feature enablement, bot-log channels, custom leaderboards, Hall of Fame roles/announcements, and scheduled notification posts.
+- Quote of the Day: scheduled quote deliveries sent on a 3-day interval to a designated channel.
+
+- Clean Server: automated daily inactivity audit that detects and removes (kicks) members inactive for more than 30 days (1 month), with exemptions for administrators, bots, server owners, role hierarchy, recent joins (< 30 days), and current presence/voice activity.
+
+- Per-guild feature enablement, interactive `/setting` panel, bot-log channels, custom leaderboards, Hall of Fame roles/announcements, and scheduled notification posts.
 
 - Whole-word forbidden-language filtering for ordinary messages, `/message`, and `/question`.
 
@@ -55,7 +59,7 @@ Each DB worker operation owns its `SessionLocal()` session and closes it before 
 
 - A Google Gemini API key is required only for AI ticket replies.
 
-- Dependencies listed in [requirements.txt](file:///home/ben/rdp/rynexsecurity/requirements.txt), including `discord`, `SQLAlchemy`, `psycopg2-binary`, `aiohttp`, `feedparser`, `Pillow`, and `google-genai`.
+- Dependencies listed in [requirements.txt](requirements.txt), including `discord`, `SQLAlchemy`, `psycopg2-binary`, `aiohttp`, `feedparser`, `Pillow`, and `google-genai`.
 
 ## Installation
 
@@ -106,6 +110,8 @@ Grant only the permissions needed for enabled features:
 
 - Manage Roles for Hall of Fame roles.
 
+- Kick Members for Clean Server inactive member pruning.
+
 - Read/Send permissions in each configured feature channel.
 
 Slash-command decorators set default administrator/manage-messages permissions where noted below. Server owners should still validate channel overwrites and bot-role hierarchy.
@@ -116,12 +122,13 @@ Use `/enable` and `/disable` as an administrator to configure per-guild features
 
 | Command | Parameters | Permission / behavior |
 | - | - | - |
+| `/setting` | none | Administrator. Opens the interactive visual settings panel to enable/disable features (Clean Server, Quote of the Day, Support, Attendance, etc.), configure roles, and test enabled features. |
 | `/message` | `channel`, optional `content` | Administrator. Opens a multiline modal; preserves entered whitespace/markdown and sends to the target channel. |
 | `/set\_leaderboard` | optional `role` | Administrator. Sets or clears the role eligible for the main leaderboard. |
-| `/enable` | `option`, `channel` | Administrator. Enables bot logs, CVE/news, support, attendance, welcome, leaderboard, or level-up announcements. |
+| `/enable` | `option`, `channel` | Administrator. Enables bot logs, CVE/news, quote of the day, clean server, support, attendance, welcome, leaderboard, level-up announcements, or verification. |
 | `/disable` | `option` | Administrator. Disables a configured feature. |
 | `/enable\_hall\_of\_fame` | `role\_name`, `announcement\_channel`, `warning\_channel` | Administrator. Configures Hall of Fame. |
-| `/test` | `option` | Administrator. Sends a safe test message/card to a configured feature channel. |
+| `/test` | `option` | Administrator. Sends a safe test message/card or runs a feature test (Clean Server, Quote of the Day, Level-Up Announcements, etc.) to a configured feature channel. |
 | `/add\_custom\_leaderboard` | `channel`, `name`, optional `role` | Administrator. Creates/updates a role-filtered leaderboard. |
 | `/remove\_custom\_leaderboard` | `channel` | Administrator. Removes that leaderboard. |
 | `/hall\_of\_fame` | template, five members, optional custom name | Administrator. Assigns/refreshes Hall of Fame entries and posts an image. |
@@ -150,7 +157,7 @@ Ticket AI responses include **Mark as Resolved** and **Talk to Human / Unsatisfi
 
 - News checks feeds every 30 minutes after the bot is ready.
 
-- Notifications check scheduled summaries each minute: the morning leaderboard/custom boards run at `08:00` and attendance summary at `23:50` (UTC+05:00).
+- Notifications check scheduled tasks: the morning leaderboard/custom boards and Clean Server inactivity sweep run at `08:00` (Asia/Karachi / UTC+05:00); Quote of the Day runs at `08:00` on a 3-day interval; attendance summary runs at `23:50`.
 
 - Voice XP runs every minute; it requires at least two non-bot, non-deafened members in a voice channel.
 
@@ -212,7 +219,7 @@ getent ahosts aws-0-ap-southeast-2.pooler.supabase.com
 
 ## systemd deployment
 
-The repository includes [rynexbot.service](file:///home/ben/rdp/rynexsecurity/rynexbot.service). It is a template and currently uses `/root/bot`; edit `User`, `WorkingDirectory`, and `ExecStart` to match the actual deployment before installing it.
+The repository includes [rynexbot.service](rynexbot.service). It is a template and currently uses `/root/bot`; edit `User`, `WorkingDirectory`, and `ExecStart` to match the actual deployment before installing it.
 
 ```
 sudo cp rynexbot.service /etc/systemd/system/rynexbot.service  

@@ -156,7 +156,7 @@ async def _news_loop(self):
             session = await self._get_http_session()
             started = time.perf_counter()
             try:
-                async with session.get(feed_info["url"], headers={"User-Agent": "RynexSecurityBot/1.0"}) as response:
+                async with session.get(feed_info["url"], headers={"User-Agent": "RynexTechnologiesBot/1.0"}) as response:
                     response.raise_for_status()
                     payload = await response.read()
                 parsed = await asyncio.to_thread(feedparser.parse, payload)

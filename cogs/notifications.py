@@ -6,7 +6,7 @@ import asyncio
 import logging
 import random
 from zoneinfo import ZoneInfo
-from database import SessionLocal, GuildConfig, UserData, AttendanceLog, CustomLeaderboard
+from database import SessionLocal, GuildConfig, UserData, AttendanceLog, CustomLeaderboard, Ticket, AdminPresenceInterval
 from utils.db_executor import run_db
 from utils.leaderboard import (
     get_channel_members,
@@ -144,19 +144,41 @@ class NotificationsCog(commands.Cog):
                             leaderboard_channel_id, guild.id,
                         )
 
-                # Quote of the Day at the same fixed 08:00 Asia/Karachi run.
+                # Quote of the Day at the same fixed 08:00 Asia/Karachi run (sent every 3 days).
                 if current_time_str == "08:00" and config.quote_of_day_enabled and config.quote_of_day_channel:
                     channel = guild.get_channel(int(config.quote_of_day_channel))
                     if isinstance(channel, discord.TextChannel):
-                        quote, author = _choose_quote(config.quote_of_day_last_quote)
-                        embed = discord.Embed(title="Quote of the Day", description=f"“{quote}”", color=discord.Color.teal())
-                        embed.set_footer(text=author)
-                        try:
-                            await channel.send(embed=embed)
-                        except discord.HTTPException:
-                            logging.exception("Failed to send Quote of the Day to channel %s", channel.id)
+                        should_send = False
+                        today_date = now.date()
+                        if not getattr(config, "quote_of_day_last_date", None):
+                            should_send = True
                         else:
-                            await run_db(_set_last_quote, config.guild_id, quote)
+                            try:
+                                last_date = datetime.date.fromisoformat(config.quote_of_day_last_date)
+                                if (today_date - last_date).days >= 3:
+                                    should_send = True
+                            except (ValueError, TypeError):
+                                should_send = True
+
+                        if should_send:
+                            quote, author = _choose_quote(config.quote_of_day_last_quote)
+                            embed = discord.Embed(title="Quote of the Day", description=f"“{quote}”", color=discord.Color.teal())
+                            embed.set_footer(text=author)
+                            try:
+                                await channel.send(embed=embed)
+                            except discord.HTTPException:
+                                logging.exception("Failed to send Quote of the Day to channel %s", channel.id)
+                            else:
+                                await run_db(_set_last_quote, config.guild_id, quote, today_date.isoformat())
+
+                # Clean Server daily check at 08:00 (removes members inactive for 1 month / 30+ days).
+                if current_time_str == "08:00" and getattr(config, "clean_server_enabled", False):
+                    today_str = now.strftime('%Y-%m-%d')
+                    if getattr(config, "clean_server_last_run", None) != today_str:
+                        try:
+                            await run_clean_server(guild, config, now)
+                        except Exception:
+                            logging.exception("Clean server routine failed for guild %s", guild.id)
                 
                 # Nightly Attendance at 23:50
                 if current_time_str == "23:50" and config.attendance_enabled and config.attendance_channel:
@@ -282,12 +304,160 @@ def _choose_quote(last_quote):
     return random.choice(choices or list(QUOTE_OF_THE_DAY))
 
 
-def _set_last_quote(guild_id, quote):
+def _set_last_quote(guild_id, quote, date_str=None):
     db = SessionLocal()
     try:
         config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
         if config:
             config.quote_of_day_last_quote = quote
+            if date_str:
+                config.quote_of_day_last_date = str(date_str)
+            db.commit()
+    finally:
+        db.close()
+
+
+async def run_clean_server(guild: discord.Guild, config: GuildConfig, now: datetime.datetime | None = None) -> list[discord.Member]:
+    """Check all members in the guild daily and remove (kick) those inactive for 1 month (>= 30 days)."""
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    cutoff_dt = now - datetime.timedelta(days=30)
+    cutoff_date = (now - datetime.timedelta(days=30)).strftime('%Y-%m-%d')
+
+    if not guild.chunked:
+        try:
+            await guild.chunk()
+        except Exception:
+            pass
+
+    active_user_ids = await run_db(_fetch_active_user_ids, str(guild.id), cutoff_dt, cutoff_date)
+
+    removed_members = []
+    for member in guild.members:
+        if member.bot:
+            continue
+        if member.id == guild.owner_id:
+            continue
+        if member.guild_permissions.administrator:
+            continue
+        if guild.me and member.top_role >= guild.me.top_role:
+            continue
+        # If user joined within last 30 days, they haven't been in server for a month
+        if member.joined_at:
+            joined_at = member.joined_at
+            if joined_at.tzinfo is None:
+                joined_at = joined_at.replace(tzinfo=datetime.timezone.utc)
+            if (now - joined_at).days < 30:
+                continue
+        # If user is currently online/idle/dnd or in voice, consider active
+        raw_status = str(member.status)
+        if raw_status in ("online", "idle", "dnd") or (member.voice and member.voice.channel):
+            continue
+        # If user was active according to DB records
+        if member.id in active_user_ids or str(member.id) in active_user_ids:
+            continue
+
+        # Inactive for 30+ days
+        try:
+            await member.kick(reason="Clean Server: Inactive for more than 30 days")
+            removed_members.append(member)
+            logging.info("Clean Server: Kicked inactive member %s (%s) from guild %s", member.display_name, member.id, guild.id)
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            logging.warning("Clean Server: Could not kick member %s (%s) from guild %s: %s", member.display_name, member.id, guild.id, exc)
+
+    today_str = now.strftime('%Y-%m-%d')
+    await run_db(_set_clean_server_last_run, guild.id, today_str)
+
+    target_channel_id = getattr(config, "clean_server_channel", None) or getattr(config, "bot_logs_channel", None)
+    if target_channel_id:
+        ch = guild.get_channel(int(target_channel_id))
+        if isinstance(ch, discord.TextChannel):
+            embed = discord.Embed(
+                title="🧹 Clean Server Report",
+                description=(
+                    f"Daily inactive user check completed.\n"
+                    f"**Members checked:** {len(guild.members)}\n"
+                    f"**Inactive members removed:** {len(removed_members)}"
+                ),
+                color=discord.Color.green() if not removed_members else discord.Color.orange(),
+                timestamp=now,
+            )
+            if removed_members:
+                names = [f"• {m.display_name} (`{m.id}`)" for m in removed_members[:20]]
+                if len(removed_members) > 20:
+                    names.append(f"...and {len(removed_members) - 20} more.")
+                embed.add_field(name="Removed Inactive Users (30+ days inactive)", value="\n".join(names), inline=False)
+            try:
+                await ch.send(embed=embed)
+            except discord.HTTPException:
+                logging.exception("Failed to send Clean Server report to channel %s", ch.id)
+
+    return removed_members
+
+
+def _fetch_active_user_ids(guild_id: str, cutoff_dt: datetime.datetime, cutoff_date: str) -> set[int]:
+    db = SessionLocal()
+    try:
+        active_ids = set()
+        user_rows = db.query(UserData.user_id).filter(
+            UserData.guild_id == str(guild_id),
+            (
+                (UserData.last_active_at >= cutoff_dt) |
+                (UserData.updated_at >= cutoff_dt) |
+                (UserData.last_daily >= cutoff_dt) |
+                (UserData.daily_xp_date >= cutoff_date)
+            )
+        ).all()
+        for r in user_rows:
+            try:
+                active_ids.add(int(r[0]))
+            except (ValueError, TypeError):
+                pass
+
+        att_rows = db.query(AttendanceLog.user_id).filter(
+            AttendanceLog.guild_id == str(guild_id),
+            AttendanceLog.date >= cutoff_date
+        ).all()
+        for r in att_rows:
+            try:
+                active_ids.add(int(r[0]))
+            except (ValueError, TypeError):
+                pass
+
+        ticket_rows = db.query(Ticket.owner_id).filter(
+            Ticket.guild_id == str(guild_id),
+            Ticket.created_at >= cutoff_dt
+        ).all()
+        for r in ticket_rows:
+            try:
+                active_ids.add(int(r[0]))
+            except (ValueError, TypeError):
+                pass
+
+        presence_rows = db.query(AdminPresenceInterval.user_id).filter(
+            AdminPresenceInterval.guild_id == str(guild_id),
+            (
+                (AdminPresenceInterval.started_at >= cutoff_dt) |
+                (AdminPresenceInterval.ended_at >= cutoff_dt) |
+                (AdminPresenceInterval.ended_at.is_(None))
+            )
+        ).all()
+        for r in presence_rows:
+            try:
+                active_ids.add(int(r[0]))
+            except (ValueError, TypeError):
+                pass
+
+        return active_ids
+    finally:
+        db.close()
+
+
+def _set_clean_server_last_run(guild_id: int | str, date_str: str):
+    db = SessionLocal()
+    try:
+        config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
+        if config:
+            config.clean_server_last_run = date_str
             db.commit()
     finally:
         db.close()
