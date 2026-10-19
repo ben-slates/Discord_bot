@@ -3,7 +3,7 @@ import pytest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from database import SessionLocal, GuildConfig, UserData, AttendanceLog
-from cogs.custom_lb import _enable_feature_worker, _disable_feature_worker
+from cogs.custom_lb import _enable_feature_worker, _disable_feature_worker, _feature_test_config_worker
 from cogs.notifications import run_clean_server, _set_last_quote
 
 
@@ -42,6 +42,9 @@ def test_clean_server_enable_and_disable():
     finally:
         db.close()
 
+    result = _feature_test_config_worker(guild_id, "clean_server")
+    assert result == ("Clean Server", str(channel_id))
+
     label, err = _disable_feature_worker(guild_id, "clean_server")
     assert err is None
     assert label == "Clean Server"
@@ -54,6 +57,28 @@ def test_clean_server_enable_and_disable():
         assert config.clean_server_last_run is None
     finally:
         db.close()
+
+
+def test_clean_server_enable_without_channel():
+    guild_id = "test_guild_clean_server_no_channel_456"
+
+    # Enable clean_server with no channel (channel_id=None)
+    label, err = _enable_feature_worker(guild_id, "clean_server", None)
+    assert err is None
+    assert label == "Clean Server"
+
+    db = SessionLocal()
+    try:
+        config = db.query(GuildConfig).filter_by(guild_id=guild_id).first()
+        assert config is not None
+        assert config.clean_server_enabled is True
+        assert config.clean_server_channel is None
+    finally:
+        db.close()
+
+    # Testing config should indicate enabled server-wide ("server")
+    result = _feature_test_config_worker(guild_id, "clean_server")
+    assert result == ("Clean Server", "server")
 
 
 @pytest.mark.asyncio

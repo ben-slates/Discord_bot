@@ -125,7 +125,7 @@ Use `/enable` and `/disable` as an administrator to configure per-guild features
 | `/setting` | none | Administrator. Opens the interactive visual settings panel to enable/disable features (Clean Server, Quote of the Day, Support, Attendance, etc.), configure roles, and test enabled features. |
 | `/message` | `channel`, optional `content` | Administrator. Opens a multiline modal; preserves entered whitespace/markdown and sends to the target channel. |
 | `/set\_leaderboard` | optional `role` | Administrator. Sets or clears the role eligible for the main leaderboard. |
-| `/enable` | `option`, `channel` | Administrator. Enables bot logs, CVE/news, quote of the day, clean server, support, attendance, welcome, leaderboard, level-up announcements, or verification. |
+| `/enable` | `option`, optional `channel` | Administrator. Enables bot logs, CVE/news, quote of the day, clean server (server-wide; channel optional for audit reports), support, attendance, welcome, leaderboard, level-up announcements, or verification. |
 | `/disable` | `option` | Administrator. Disables a configured feature. |
 | `/enable\_hall\_of\_fame` | `role\_name`, `announcement\_channel`, `warning\_channel` | Administrator. Configures Hall of Fame. |
 | `/test` | `option` | Administrator. Sends a safe test message/card or runs a feature test (Clean Server, Quote of the Day, Level-Up Announcements, etc.) to a configured feature channel. |

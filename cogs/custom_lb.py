@@ -75,9 +75,9 @@ class FeatureEnableModal(discord.ui.Modal, title="Enable Feature"):
             max_length=40,
         )
         self.channel_id = discord.ui.TextInput(
-            label="Channel/category ID",
-            placeholder="Paste the Discord channel or category ID",
-            required=True,
+            label="Channel/category ID (Optional for Clean Server)",
+            placeholder="Paste channel/category ID (leave blank for Clean Server)",
+            required=False,
             max_length=25,
         )
         self.add_item(self.feature)
@@ -85,8 +85,19 @@ class FeatureEnableModal(discord.ui.Modal, title="Enable Feature"):
 
     async def on_submit(self, interaction: discord.Interaction):
         feature = self.feature.value.strip().lower().replace(" ", "_")
+        raw_channel_id = self.channel_id.value.strip() if self.channel_id.value else ""
+        if feature == "clean_server":
+            channel = None
+            if raw_channel_id:
+                try:
+                    channel = interaction.guild.get_channel(int(raw_channel_id))
+                except (TypeError, ValueError):
+                    pass
+            await interaction.response.defer(ephemeral=True)
+            await self.cog.enable_feature_settings(interaction, feature, channel if isinstance(channel, discord.TextChannel) else None)
+            return
         try:
-            channel = interaction.guild.get_channel(int(self.channel_id.value.strip()))
+            channel = interaction.guild.get_channel(int(raw_channel_id))
         except (TypeError, ValueError):
             channel = None
         if not channel:
@@ -212,11 +223,11 @@ class FeatureEnableSelectView(SettingsErrorView):
                 discord.SelectOption(label="Leaderboard", value="leaderboard"),
                 discord.SelectOption(label="Level-Up Announcements", value="level_up_announcements"),
                 discord.SelectOption(label="Verification", value="verification"),
-                discord.SelectOption(label="Clean Server", value="clean_server"),
+                discord.SelectOption(label="Clean Server (Server-wide)", value="clean_server"),
             ],
         )
         self.channel = discord.ui.ChannelSelect(
-            placeholder="Select the target channel/category",
+            placeholder="Select target channel or category (optional for Clean Server)",
             channel_types=[discord.ChannelType.text, discord.ChannelType.category],
         )
         self.add_item(self.feature)
@@ -233,8 +244,16 @@ class FeatureEnableSelectView(SettingsErrorView):
     @discord.ui.button(label="Apply", style=discord.ButtonStyle.success)
     async def apply(self, interaction, button):
         feature = self.feature.values[0] if self.feature.values else None
+        if not feature:
+            await interaction.response.send_message("Select a feature first.", ephemeral=True)
+            return
+        if feature == "clean_server":
+            channel = _resolve_selected_channel(interaction.guild, self.channel.values[0] if self.channel.values else None)
+            await interaction.response.defer(ephemeral=True)
+            await self.cog.enable_feature_settings(interaction, feature, channel if isinstance(channel, discord.TextChannel) else None)
+            return
         channel = _resolve_selected_channel(interaction.guild, self.channel.values[0] if self.channel.values else None)
-        if not feature or not channel:
+        if not channel:
             await interaction.response.send_message("Select both a feature and a channel first.", ephemeral=True)
             return
         if feature == "support":
@@ -581,7 +600,7 @@ def build_hall_of_fame_overall_content(department_key, department_name=None):
     return label, description
 
 
-def _enable_feature_worker(guild_id, option, channel_id):
+def _enable_feature_worker(guild_id, option, channel_id=None):
     db = SessionLocal()
     try:
         config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
@@ -608,10 +627,11 @@ def _enable_feature_worker(guild_id, option, channel_id):
             "attendance": "attendance_dashboard_message_id",
             "verification": "verification_dashboard_message_id",
         }.get(option)
-        if dashboard_field and getattr(config, channel_field) != str(channel_id):
+        if dashboard_field and channel_field and channel_id and getattr(config, channel_field) != str(channel_id):
             setattr(config, dashboard_field, None)
         setattr(config, enabled_field, True)
-        setattr(config, channel_field, str(channel_id))
+        if channel_field:
+            setattr(config, channel_field, str(channel_id) if channel_id else None)
         db.commit()
         return label, None
     finally:
@@ -726,7 +746,12 @@ def _feature_test_config_worker(guild_id, option):
         if not entry:
             return None
         enabled_field, channel_field, label = entry
-        if not config or not getattr(config, enabled_field) or not getattr(config, channel_field):
+        if not config or not getattr(config, enabled_field):
+            return label, None
+        if option == "clean_server":
+            raw_ch = getattr(config, channel_field)
+            return label, str(raw_ch) if raw_ch else "server"
+        if not getattr(config, channel_field):
             return label, None
         return label, str(getattr(config, channel_field))
     finally:
@@ -757,7 +782,19 @@ class CustomLBCog(commands.Cog):
         )
         await interaction.response.send_message(embed=embed, view=SettingsPanelView(self), ephemeral=True)
 
-    async def enable_feature_settings(self, interaction, option, channel):
+    async def enable_feature_settings(self, interaction, option, channel=None):
+        if option == "clean_server":
+            ch_id = channel.id if channel else None
+            label, error = await run_db(_enable_feature_worker, interaction.guild_id, option, ch_id)
+            if error:
+                await interaction.followup.send(error, ephemeral=True)
+                return
+            if channel:
+                await interaction.followup.send(f"Clean Server enabled server-wide (audit reports sent to {channel.mention}).", ephemeral=True)
+            else:
+                await interaction.followup.send("Clean Server enabled server-wide (removes members inactive for 30+ days).", ephemeral=True)
+            return
+
         if not isinstance(channel, discord.TextChannel):
             await interaction.followup.send("This feature requires a text channel.", ephemeral=True)
             return
@@ -787,6 +824,24 @@ class CustomLBCog(commands.Cog):
         if not channel_id:
             await interaction.followup.send(f"{label} is not enabled for this server yet.", ephemeral=True)
             return
+        if option == "clean_server":
+            from cogs.notifications import run_clean_server
+            db = SessionLocal()
+            try:
+                cfg = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
+            finally:
+                db.close()
+            removed = await run_clean_server(interaction.guild, cfg)
+            if channel_id and channel_id != "server":
+                ch = interaction.guild.get_channel(int(channel_id))
+                if isinstance(ch, discord.TextChannel):
+                    try:
+                        await ch.send(f"🧹 Clean Server test executed by {interaction.user.mention}. Checked all users, removed {len(removed)} inactive member(s).")
+                    except Exception:
+                        pass
+            await interaction.followup.send(f"Clean Server test complete. Checked all users, removed {len(removed)} inactive member(s).", ephemeral=True)
+            return
+
         channel = interaction.guild.get_channel(int(channel_id))
         if not isinstance(channel, discord.TextChannel):
             await interaction.followup.send(f"The configured {label} channel could not be found.", ephemeral=True)
@@ -806,17 +861,6 @@ class CustomLBCog(commands.Cog):
                 )
                 embed.set_footer(text="Alan Kay")
                 await channel.send(embed=embed)
-            elif option == "clean_server":
-                from cogs.notifications import run_clean_server
-                db = SessionLocal()
-                try:
-                    cfg = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
-                finally:
-                    db.close()
-                removed = await run_clean_server(interaction.guild, cfg)
-                await channel.send(f"🧹 Clean Server test executed by {interaction.user.mention}. Checked all users, removed {len(removed)} inactive member(s).")
-                await interaction.followup.send(f"Clean Server test complete. Removed {len(removed)} inactive member(s).", ephemeral=True)
-                return
             else:
                 await channel.send(f"✅ {label} test message from {interaction.user.mention}")
         except discord.Forbidden:
@@ -899,7 +943,7 @@ class CustomLBCog(commands.Cog):
         self,
         interaction: discord.Interaction,
         option: app_commands.Choice[str],
-        channel: discord.abc.GuildChannel,
+        channel: discord.abc.GuildChannel = None,
     ):
         if option.value == "support":
             if not isinstance(channel, discord.CategoryChannel):
@@ -1001,13 +1045,15 @@ class CustomLBCog(commands.Cog):
                 return
 
             if option.value == "clean_server":
-                if not isinstance(channel, discord.TextChannel):
-                    await interaction.followup.send("Clean Server must use a text channel for reports.", ephemeral=True)
-                    return
                 config.clean_server_enabled = True
-                config.clean_server_channel = str(channel.id)
-                db.commit()
-                await interaction.followup.send(f"Clean Server enabled with logs sent to {channel.mention}.", ephemeral=True)
+                if isinstance(channel, discord.TextChannel):
+                    config.clean_server_channel = str(channel.id)
+                    db.commit()
+                    await interaction.followup.send(f"Clean Server enabled with logs sent to {channel.mention}.", ephemeral=True)
+                else:
+                    config.clean_server_channel = None
+                    db.commit()
+                    await interaction.followup.send("Clean Server enabled server-wide (removes members inactive for 30+ days).", ephemeral=True)
                 return
 
             await interaction.followup.send("That option is not supported yet.", ephemeral=True)
@@ -1242,18 +1288,20 @@ class CustomLBCog(commands.Cog):
                 return
 
             if option.value == "clean_server":
-                if not config or not config.clean_server_enabled or not config.clean_server_channel:
+                if not config or not config.clean_server_enabled:
                     await interaction.response.send_message("Clean Server is not enabled for this server yet.", ephemeral=True)
-                    return
-                channel = interaction.guild.get_channel(int(config.clean_server_channel))
-                if not channel:
-                    await interaction.response.send_message("The configured Clean Server log channel could not be found.", ephemeral=True)
                     return
                 from cogs.notifications import run_clean_server
                 await interaction.response.defer(ephemeral=True)
                 removed = await run_clean_server(interaction.guild, config)
-                await channel.send(f"🧹 Clean Server test executed by {interaction.user.mention}. Checked all users, removed {len(removed)} inactive member(s).")
-                await interaction.followup.send(f"Clean Server test complete. Removed {len(removed)} inactive member(s).", ephemeral=True)
+                if config.clean_server_channel:
+                    channel = interaction.guild.get_channel(int(config.clean_server_channel))
+                    if isinstance(channel, discord.TextChannel):
+                        try:
+                            await channel.send(f"🧹 Clean Server test executed by {interaction.user.mention}. Checked all users, removed {len(removed)} inactive member(s).")
+                        except Exception:
+                            pass
+                await interaction.followup.send(f"Clean Server test complete. Checked all users, removed {len(removed)} inactive member(s).", ephemeral=True)
                 return
 
             await interaction.response.send_message("That option is not supported yet.", ephemeral=True)
