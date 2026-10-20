@@ -632,6 +632,10 @@ def _enable_feature_worker(guild_id, option, channel_id=None):
         setattr(config, enabled_field, True)
         if channel_field:
             setattr(config, channel_field, str(channel_id) if channel_id else None)
+        if option == "clean_server":
+            if not config.clean_server_activated_at:
+                config.clean_server_activated_at = datetime.datetime.now(datetime.timezone.utc)
+            config.clean_server_last_run = None
         db.commit()
         return label, None
     finally:
@@ -681,6 +685,7 @@ def _disable_feature_worker(guild_id, option):
             config.hall_of_fame_warning_channel = None
         if option == "clean_server":
             config.clean_server_last_run = None
+            config.clean_server_activated_at = None
         db.commit()
         return label, None
     finally:
@@ -789,10 +794,18 @@ class CustomLBCog(commands.Cog):
             if error:
                 await interaction.followup.send(error, ephemeral=True)
                 return
-            if channel:
-                await interaction.followup.send(f"Clean Server enabled server-wide (audit reports sent to {channel.mention}).", ephemeral=True)
-            else:
-                await interaction.followup.send("Clean Server enabled server-wide (removes members inactive for 30+ days).", ephemeral=True)
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
+            start_date_str = now_utc.strftime('%Y-%m-%d')
+            target_date_str = (now_utc + datetime.timedelta(days=30)).strftime('%Y-%m-%d')
+            report_msg = f" (audit reports sent to {channel.mention})" if channel else ""
+            await interaction.followup.send(
+                f"✅ **Clean Server enabled server-wide**{report_msg}.\n"
+                f"• **Activated On:** `{start_date_str}`\n"
+                f"• **Observation Period:** 30 consecutive days from activation\n"
+                f"• **First Inactivity Prune:** `{target_date_str}`\n"
+                f"The bot is now counting days onward. Inactive members will only be evaluated and removed after 30 consecutive days.",
+                ephemeral=True
+            )
             return
 
         if not isinstance(channel, discord.TextChannel):
@@ -825,21 +838,46 @@ class CustomLBCog(commands.Cog):
             await interaction.followup.send(f"{label} is not enabled for this server yet.", ephemeral=True)
             return
         if option == "clean_server":
-            from cogs.notifications import run_clean_server
+            from cogs.notifications import run_clean_server, _set_clean_server_activated_at
             db = SessionLocal()
             try:
                 cfg = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
             finally:
                 db.close()
-            removed = await run_clean_server(interaction.guild, cfg)
-            if channel_id and channel_id != "server":
-                ch = interaction.guild.get_channel(int(channel_id))
-                if isinstance(ch, discord.TextChannel):
-                    try:
-                        await ch.send(f"🧹 Clean Server test executed by {interaction.user.mention}. Checked all users, removed {len(removed)} inactive member(s).")
-                    except Exception:
-                        pass
-            await interaction.followup.send(f"Clean Server test complete. Checked all users, removed {len(removed)} inactive member(s).", ephemeral=True)
+            if not cfg or not cfg.clean_server_enabled:
+                await interaction.followup.send("Clean Server is not enabled for this server yet.", ephemeral=True)
+                return
+
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
+            activated_at = getattr(cfg, "clean_server_activated_at", None)
+            if activated_at is None:
+                activated_at = now_utc
+                await run_db(_set_clean_server_activated_at, str(interaction.guild_id), now_utc)
+                cfg.clean_server_activated_at = now_utc
+
+            if activated_at.tzinfo is None:
+                activated_at = activated_at.replace(tzinfo=datetime.timezone.utc)
+
+            days_since_activation = (now_utc - activated_at).days
+            if days_since_activation < 30:
+                days_remaining = 30 - days_since_activation
+                target_date = (activated_at + datetime.timedelta(days=30)).strftime('%Y-%m-%d')
+                activated_str = activated_at.strftime('%Y-%m-%d')
+                await interaction.followup.send(
+                    f"⏳ **Clean Server Status:** Currently on Day {days_since_activation}/30 of consecutive observation period.\n"
+                    f"• **Activated On:** `{activated_str}`\n"
+                    f"• **Days Remaining:** `{days_remaining} day(s)`\n"
+                    f"• **First Inactivity Evaluation:** `{target_date}`\n\n"
+                    f"The bot is tracking daily member activity. No members will be removed until the 30 consecutive days have elapsed.",
+                    ephemeral=True
+                )
+                return
+
+            removed = await run_clean_server(interaction.guild, cfg, now_utc)
+            await interaction.followup.send(
+                f"🧹 Clean Server audit complete. Checked all users, removed {len(removed)} inactive member(s). Full list sent to configured channel.",
+                ephemeral=True
+            )
             return
 
         channel = interaction.guild.get_channel(int(channel_id))
@@ -1046,14 +1084,32 @@ class CustomLBCog(commands.Cog):
 
             if option.value == "clean_server":
                 config.clean_server_enabled = True
+                if not config.clean_server_activated_at:
+                    config.clean_server_activated_at = datetime.datetime.now(datetime.timezone.utc)
+                config.clean_server_last_run = None
+                now_utc = datetime.datetime.now(datetime.timezone.utc)
+                start_date_str = now_utc.strftime('%Y-%m-%d')
+                target_date_str = (now_utc + datetime.timedelta(days=30)).strftime('%Y-%m-%d')
                 if isinstance(channel, discord.TextChannel):
                     config.clean_server_channel = str(channel.id)
                     db.commit()
-                    await interaction.followup.send(f"Clean Server enabled with logs sent to {channel.mention}.", ephemeral=True)
+                    await interaction.followup.send(
+                        f"✅ **Clean Server enabled server-wide** (audit reports sent to {channel.mention}).\n"
+                        f"• **Activated On:** `{start_date_str}`\n"
+                        f"• **Observation Period:** 30 consecutive days from activation\n"
+                        f"• **First Inactivity Evaluation:** `{target_date_str}` (no members will be removed before this date).",
+                        ephemeral=True
+                    )
                 else:
                     config.clean_server_channel = None
                     db.commit()
-                    await interaction.followup.send("Clean Server enabled server-wide (removes members inactive for 30+ days).", ephemeral=True)
+                    await interaction.followup.send(
+                        f"✅ **Clean Server enabled server-wide**.\n"
+                        f"• **Activated On:** `{start_date_str}`\n"
+                        f"• **Observation Period:** 30 consecutive days from activation\n"
+                        f"• **First Inactivity Evaluation:** `{target_date_str}` (no members will be removed before this date).",
+                        ephemeral=True
+                    )
                 return
 
             await interaction.followup.send("That option is not supported yet.", ephemeral=True)
@@ -1291,17 +1347,39 @@ class CustomLBCog(commands.Cog):
                 if not config or not config.clean_server_enabled:
                     await interaction.response.send_message("Clean Server is not enabled for this server yet.", ephemeral=True)
                     return
+
+                now_utc = datetime.datetime.now(datetime.timezone.utc)
+                activated_at = getattr(config, "clean_server_activated_at", None)
+                if activated_at is None:
+                    activated_at = now_utc
+                    config.clean_server_activated_at = now_utc
+                    db.commit()
+
+                if activated_at.tzinfo is None:
+                    activated_at = activated_at.replace(tzinfo=datetime.timezone.utc)
+
+                days_since_activation = (now_utc - activated_at).days
+                if days_since_activation < 30:
+                    days_remaining = 30 - days_since_activation
+                    target_date = (activated_at + datetime.timedelta(days=30)).strftime('%Y-%m-%d')
+                    activated_str = activated_at.strftime('%Y-%m-%d')
+                    await interaction.response.send_message(
+                        f"⏳ **Clean Server Status:** Currently on Day {days_since_activation}/30 of consecutive observation period.\n"
+                        f"• **Activated On:** `{activated_str}`\n"
+                        f"• **Days Remaining:** `{days_remaining} day(s)`\n"
+                        f"• **First Inactivity Evaluation:** `{target_date}`\n\n"
+                        f"The bot is counting 30 consecutive days from activation onward. No members will be removed before the 30-day period completes.",
+                        ephemeral=True
+                    )
+                    return
+
                 from cogs.notifications import run_clean_server
                 await interaction.response.defer(ephemeral=True)
-                removed = await run_clean_server(interaction.guild, config)
-                if config.clean_server_channel:
-                    channel = interaction.guild.get_channel(int(config.clean_server_channel))
-                    if isinstance(channel, discord.TextChannel):
-                        try:
-                            await channel.send(f"🧹 Clean Server test executed by {interaction.user.mention}. Checked all users, removed {len(removed)} inactive member(s).")
-                        except Exception:
-                            pass
-                await interaction.followup.send(f"Clean Server test complete. Checked all users, removed {len(removed)} inactive member(s).", ephemeral=True)
+                removed = await run_clean_server(interaction.guild, config, now_utc)
+                await interaction.followup.send(
+                    f"🧹 Clean Server audit complete. Checked all users, removed {len(removed)} inactive member(s). Full list sent to configured channel.",
+                    ephemeral=True
+                )
                 return
 
             await interaction.response.send_message("That option is not supported yet.", ephemeral=True)

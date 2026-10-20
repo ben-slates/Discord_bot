@@ -39,6 +39,7 @@ def test_clean_server_enable_and_disable():
         assert config is not None
         assert config.clean_server_enabled is True
         assert config.clean_server_channel == str(channel_id)
+        assert config.clean_server_activated_at is not None
     finally:
         db.close()
 
@@ -55,6 +56,7 @@ def test_clean_server_enable_and_disable():
         assert config.clean_server_enabled is False
         assert config.clean_server_channel is None
         assert config.clean_server_last_run is None
+        assert config.clean_server_activated_at is None
     finally:
         db.close()
 
@@ -153,16 +155,113 @@ async def test_run_clean_server_inactive_detection():
         clean_server_enabled=True,
         clean_server_channel=None,
         bot_logs_channel=None,
+        clean_server_activated_at=now - datetime.timedelta(days=35),
     )
 
     removed = await run_clean_server(guild, config, now=now)
 
     assert m_inactive in removed
-    m_inactive.kick.assert_awaited_once_with(reason="Clean Server: Inactive for more than 30 days")
+    m_inactive.kick.assert_awaited_once_with(reason="Clean Server: Inactive for 30 consecutive days")
 
     # Ensure other members were NOT kicked
     for safe in [m_bot, m_owner, m_admin, m_high_role, m_new, m_online, m_voice, m_db_active]:
         safe.kick.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_clean_server_no_kicks_before_30_days():
+    guild_id = "888"
+    now = datetime.datetime(2026, 10, 20, 12, 0, tzinfo=datetime.timezone.utc)
+
+    # Inactive member who hasn't been active
+    m_inactive = MagicMock()
+    m_inactive.id = 7001
+    m_inactive.name = "old_user"
+    m_inactive.display_name = "Old User"
+    m_inactive.bot = False
+    m_inactive.guild_permissions.administrator = False
+    m_inactive.top_role = MagicMock(position=1, __ge__=lambda self, o: False)
+    m_inactive.joined_at = now - datetime.timedelta(days=100)
+    m_inactive.status = "offline"
+    m_inactive.voice = None
+    m_inactive.kick = AsyncMock()
+
+    guild = MagicMock()
+    guild.id = int(guild_id)
+    guild.owner_id = 9999
+    guild.me = MagicMock(top_role=MagicMock(position=10))
+    guild.chunked = True
+    guild.members = [m_inactive]
+
+    # Feature activated only 10 days ago!
+    config = SimpleNamespace(
+        guild_id=guild_id,
+        clean_server_enabled=True,
+        clean_server_channel=None,
+        bot_logs_channel=None,
+        clean_server_activated_at=now - datetime.timedelta(days=10),
+    )
+
+    removed = await run_clean_server(guild, config, now=now)
+
+    # Must NOT remove anyone before 30 consecutive days from activation
+    assert removed == []
+    m_inactive.kick.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_clean_server_multiple_messages_reporting():
+    guild_id = "777"
+    now = datetime.datetime(2026, 10, 20, 12, 0, tzinfo=datetime.timezone.utc)
+
+    # Create 40 inactive members
+    members = []
+    for i in range(40):
+        m = MagicMock()
+        m.id = 8000 + i
+        m.name = f"user_{i}"
+        m.display_name = f"Display Name {i}"
+        m.bot = False
+        m.guild_permissions.administrator = False
+        m.top_role = MagicMock(position=1, __ge__=lambda self, o: False)
+        m.joined_at = now - datetime.timedelta(days=100)
+        m.status = "offline"
+        m.voice = None
+        m.kick = AsyncMock()
+        members.append(m)
+
+    import discord
+    target_channel = MagicMock(spec=discord.TextChannel)
+    target_channel.send = AsyncMock()
+
+    guild = MagicMock()
+    guild.id = int(guild_id)
+    guild.owner_id = 9999
+    guild.me = MagicMock(top_role=MagicMock(position=10))
+    guild.chunked = True
+    guild.members = members
+    guild.get_channel = MagicMock(return_value=target_channel)
+
+    # Activated 35 days ago (>= 30 days)
+    config = SimpleNamespace(
+        guild_id=guild_id,
+        clean_server_enabled=True,
+        clean_server_channel="123456",
+        bot_logs_channel=None,
+        clean_server_activated_at=now - datetime.timedelta(days=35),
+    )
+
+    removed = await run_clean_server(guild, config, now=now)
+
+    assert len(removed) == 40
+    # The summary embed was sent, plus multiple message chunks
+    assert target_channel.send.call_count >= 2
+
+    # Verify that all 40 usernames and display names were sent across the messages
+    all_sent_texts = " ".join([str(call.args[0]) for call in target_channel.send.call_args_list if call.args])
+    for i in range(40):
+        assert f"@user_{i}" in all_sent_texts
+        assert f"Display Name {i}" in all_sent_texts
 
 
 def test_no_legacy_brand_in_codebase():

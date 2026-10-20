@@ -201,6 +201,7 @@ class GuildConfig(Base):
     clean_server_enabled = Column(Boolean, default=False)
     clean_server_channel = Column(String, nullable=True)
     clean_server_last_run = Column(String, nullable=True)
+    clean_server_activated_at = Column(DateTime, nullable=True)
     # Verification
     verification_enabled = Column(Boolean, default=False)
     verification_channel = Column(String, nullable=True)
@@ -473,6 +474,9 @@ def ensure_database_columns():
     if "clean_server_last_run" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN clean_server_last_run VARCHAR"))
+    if "clean_server_activated_at" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN clean_server_activated_at TIMESTAMP"))
     if "support_admin_role" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN support_admin_role VARCHAR"))

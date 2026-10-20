@@ -28,7 +28,7 @@ Watch the 18-second launch video: [`brag/brag.mp4`](brag/brag.mp4)
 
 - Quote of the Day: scheduled quote deliveries sent on a 3-day interval to a designated channel.
 
-- Clean Server: automated daily inactivity audit that detects and removes (kicks) members inactive for more than 30 days (1 month), with exemptions for administrators, bots, server owners, role hierarchy, recent joins (< 30 days), and current presence/voice activity.
+- Clean Server: automated inactivity audit that begins counting 30 consecutive days onward from feature activation. Only after the 30-day observation window elapses does it evaluate and remove (kick) members inactive for those 30 consecutive days, sending the complete list of removed usernames and display names across multiple chunked messages (exempting administrators, bots, server owner, role hierarchy, recent joins < 30 days, and current presence/voice activity).
 
 - Per-guild feature enablement, interactive `/setting` panel, bot-log channels, custom leaderboards, Hall of Fame roles/announcements, and scheduled notification posts.
 

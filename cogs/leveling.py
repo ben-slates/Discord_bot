@@ -91,17 +91,20 @@ class LevelingCog(commands.Cog):
                     UserData.guild_id == str(guild_id),
                 )
             ).filter(GuildConfig.guild_id == str(guild_id)).first() or (None, None)
+            # Always ensure user row exists and record last_active_at on every message
+            if user is None:
+                user = UserData(guild_id=str(guild_id), user_id=int(author_id))
+                db.add(user)
+            user.last_active_at = datetime.datetime.now(datetime.timezone.utc)
+
             if not config or not config.leveling_enabled:
+                db.commit()
                 return False, 0, 0, None
             
             if len(message_content) < config.min_message_length:
+                db.commit()
                 return False, 0, 0, None
 
-            user_was_created = user is None
-            if user_was_created:
-                user = UserData(guild_id=str(guild_id), user_id=int(author_id))
-                db.add(user)
-            
             today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))).strftime('%Y-%m-%d')
             if not user.daily_xp_date or str(user.daily_xp_date) != today:
                 user.daily_xp_date = today
@@ -114,7 +117,6 @@ class LevelingCog(commands.Cog):
                 max(DAILY_TEXT_XP_CAP - user.daily_text_xp_earned, 0),
                 max(DAILY_XP_CAP - user.daily_xp_earned, 0),
             )
-            user.last_active_at = datetime.datetime.now(datetime.timezone.utc)
             if xp_to_award:
                 user.xp += xp_to_award
                 user.daily_text_xp_earned += xp_to_award

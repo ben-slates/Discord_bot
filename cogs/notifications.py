@@ -318,10 +318,38 @@ def _set_last_quote(guild_id, quote, date_str=None):
 
 
 async def run_clean_server(guild: discord.Guild, config: GuildConfig, now: datetime.datetime | None = None) -> list[discord.Member]:
-    """Check all members in the guild daily and remove (kick) those inactive for 1 month (>= 30 days)."""
+    """Check all members in the guild daily and remove (kick) those inactive for 30 consecutive days onward from activation."""
     now = now or datetime.datetime.now(datetime.timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=datetime.timezone.utc)
+
+    # Clean Server activation timestamp check
+    activated_at = getattr(config, "clean_server_activated_at", None)
+    if activated_at is None:
+        activated_at = now
+        config.clean_server_activated_at = now
+        await run_db(_set_clean_server_activated_at, str(guild.id), now)
+
+    if activated_at.tzinfo is None:
+        activated_at = activated_at.replace(tzinfo=datetime.timezone.utc)
+
+    # Count days onward from activation date
+    days_since_activation = (now - activated_at).days
+    if days_since_activation < 30:
+        days_remaining = 30 - days_since_activation
+        target_date = (activated_at + datetime.timedelta(days=30)).strftime('%Y-%m-%d')
+        activated_str = activated_at.strftime('%Y-%m-%d')
+        today_str = now.strftime('%Y-%m-%d')
+        await run_db(_set_clean_server_last_run, guild.id, today_str)
+
+        logging.info(
+            "Clean Server: Guild %s is on day %s of 30 consecutive observation period (activated %s, %s day(s) remaining until %s). Zero members removed.",
+            guild.id, days_since_activation, activated_str, days_remaining, target_date,
+        )
+        return []
+
     cutoff_dt = now - datetime.timedelta(days=30)
-    cutoff_date = (now - datetime.timedelta(days=30)).strftime('%Y-%m-%d')
+    cutoff_date = cutoff_dt.strftime('%Y-%m-%d')
 
     if not guild.chunked:
         try:
@@ -332,6 +360,7 @@ async def run_clean_server(guild: discord.Guild, config: GuildConfig, now: datet
     active_user_ids = await run_db(_fetch_active_user_ids, str(guild.id), cutoff_dt, cutoff_date)
 
     removed_members = []
+    removed_member_infos = []
     for member in guild.members:
         if member.bot:
             continue
@@ -341,7 +370,7 @@ async def run_clean_server(guild: discord.Guild, config: GuildConfig, now: datet
             continue
         if guild.me and member.top_role >= guild.me.top_role:
             continue
-        # If user joined within last 30 days, they haven't been in server for a month
+        # If user joined within last 30 days, they haven't been in server for the 30-day period
         if member.joined_at:
             joined_at = member.joined_at
             if joined_at.tzinfo is None:
@@ -356,13 +385,19 @@ async def run_clean_server(guild: discord.Guild, config: GuildConfig, now: datet
         if member.id in active_user_ids or str(member.id) in active_user_ids:
             continue
 
-        # Inactive for 30+ days
+        # Inactive for 30 consecutive days onward from activation
+        info = {
+            "id": member.id,
+            "name": member.name,
+            "display_name": member.display_name,
+        }
         try:
-            await member.kick(reason="Clean Server: Inactive for more than 30 days")
+            await member.kick(reason="Clean Server: Inactive for 30 consecutive days")
             removed_members.append(member)
-            logging.info("Clean Server: Kicked inactive member %s (%s) from guild %s", member.display_name, member.id, guild.id)
+            removed_member_infos.append(info)
+            logging.info("Clean Server: Kicked inactive member %s (@%s, ID: %s) from guild %s", member.display_name, member.name, member.id, guild.id)
         except (discord.Forbidden, discord.HTTPException) as exc:
-            logging.warning("Clean Server: Could not kick member %s (%s) from guild %s: %s", member.display_name, member.id, guild.id, exc)
+            logging.warning("Clean Server: Could not kick member %s (@%s, ID: %s) from guild %s: %s", member.display_name, member.name, member.id, guild.id, exc)
 
     today_str = now.strftime('%Y-%m-%d')
     await run_db(_set_clean_server_last_run, guild.id, today_str)
@@ -371,25 +406,52 @@ async def run_clean_server(guild: discord.Guild, config: GuildConfig, now: datet
     if target_channel_id:
         ch = guild.get_channel(int(target_channel_id))
         if isinstance(ch, discord.TextChannel):
+            activated_str = activated_at.strftime('%Y-%m-%d')
             embed = discord.Embed(
-                title="🧹 Clean Server Report",
+                title="🧹 Clean Server Report — Inactive Member Prune",
                 description=(
-                    f"Daily inactive user check completed.\n"
-                    f"**Members checked:** {len(guild.members)}\n"
-                    f"**Inactive members removed:** {len(removed_members)}"
+                    f"30-day consecutive inactivity audit completed.\n"
+                    f"• **Activated On:** `{activated_str}`\n"
+                    f"• **Observation Period:** 30 consecutive days\n"
+                    f"• **Members Checked:** {len(guild.members)}\n"
+                    f"• **Inactive Members Removed:** {len(removed_members)}"
                 ),
-                color=discord.Color.green() if not removed_members else discord.Color.orange(),
+                color=discord.Color.red() if removed_members else discord.Color.green(),
                 timestamp=now,
             )
-            if removed_members:
-                names = [f"• {m.display_name} (`{m.id}`)" for m in removed_members[:20]]
-                if len(removed_members) > 20:
-                    names.append(f"...and {len(removed_members) - 20} more.")
-                embed.add_field(name="Removed Inactive Users (30+ days inactive)", value="\n".join(names), inline=False)
             try:
                 await ch.send(embed=embed)
             except discord.HTTPException:
-                logging.exception("Failed to send Clean Server report to channel %s", ch.id)
+                logging.exception("Failed to send Clean Server report embed to channel %s", ch.id)
+
+            if removed_member_infos:
+                lines = [
+                    f"• **{m['display_name']}** (`@{m['name']}`) — ID: `{m['id']}`"
+                    for m in removed_member_infos
+                ]
+                chunks = []
+                current_chunk = []
+                current_len = 0
+                for line in lines:
+                    line_len = len(line) + 1
+                    if current_chunk and (current_len + line_len > 1800):
+                        chunks.append(current_chunk)
+                        current_chunk = [line]
+                        current_len = line_len
+                    else:
+                        current_chunk.append(line)
+                        current_len += line_len
+                if current_chunk:
+                    chunks.append(current_chunk)
+
+                total_chunks = len(chunks)
+                for idx, chunk in enumerate(chunks, 1):
+                    header = f"📋 **Removed Inactive Members ({idx}/{total_chunks}) — Total: {len(removed_members)}:**\n"
+                    msg_body = header + "\n".join(chunk)
+                    try:
+                        await ch.send(msg_body)
+                    except discord.HTTPException:
+                        logging.exception("Failed to send Clean Server member list chunk %s to channel %s", idx, ch.id)
 
     return removed_members
 
@@ -458,6 +520,17 @@ def _set_clean_server_last_run(guild_id: int | str, date_str: str):
         config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
         if config:
             config.clean_server_last_run = date_str
+            db.commit()
+    finally:
+        db.close()
+
+
+def _set_clean_server_activated_at(guild_id: int | str, activated_at: datetime.datetime):
+    db = SessionLocal()
+    try:
+        config = db.query(GuildConfig).filter_by(guild_id=str(guild_id)).first()
+        if config:
+            config.clean_server_activated_at = activated_at
             db.commit()
     finally:
         db.close()
