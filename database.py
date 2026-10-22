@@ -206,11 +206,6 @@ class GuildConfig(Base):
     verification_enabled = Column(Boolean, default=False)
     verification_channel = Column(String, nullable=True)
     verification_dashboard_message_id = Column(String, nullable=True)
-    # Certificates
-    certificate_enabled = Column(Boolean, default=False)
-    certificate_role = Column(String, nullable=True)
-    certificate_channel = Column(String, nullable=True)
-    certificate_dashboard_message_id = Column(String, nullable=True)
     # Note: legacy `support_feature_enabled` removed; `support_enabled` used instead
 
 class UserData(Base):
@@ -319,8 +314,6 @@ class VerificationRecord(Base):
     verification_id = Column(String(10), nullable=False, unique=True, index=True)
     email = Column(String, nullable=False)
     verification_name = Column(String, nullable=True)
-    certificate_name = Column(String, nullable=True)
-    certificate_team = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))), onupdate=lambda: datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))))
 
@@ -495,28 +488,10 @@ def ensure_database_columns():
     if "verification_dashboard_message_id" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN verification_dashboard_message_id VARCHAR"))
-    if "certificate_enabled" not in columns:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE guild_config ADD COLUMN certificate_enabled BOOLEAN DEFAULT FALSE"))
-    if "certificate_role" not in columns:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE guild_config ADD COLUMN certificate_role VARCHAR"))
-    if "certificate_channel" not in columns:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE guild_config ADD COLUMN certificate_channel VARCHAR"))
-    if "certificate_dashboard_message_id" not in columns:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE guild_config ADD COLUMN certificate_dashboard_message_id VARCHAR"))
     verification_columns = {column["name"] for column in inspector.get_columns("verification_records")}
     if "verification_name" not in verification_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE verification_records ADD COLUMN verification_name VARCHAR"))
-    if "certificate_name" not in verification_columns:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE verification_records ADD COLUMN certificate_name VARCHAR"))
-    if "certificate_team" not in verification_columns:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE verification_records ADD COLUMN certificate_team VARCHAR"))
     # legacy support_feature_enabled removed; support_category is already handled above
     if "leaderboard_enabled" not in columns:
         with engine.begin() as conn:

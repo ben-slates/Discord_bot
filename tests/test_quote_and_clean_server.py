@@ -275,3 +275,40 @@ def test_no_legacy_brand_in_codebase():
     assert result.stdout.strip() == "", f"Found occurrences of {target}: {result.stdout}"
 
 
+def test_certificate_feature_removed():
+    from pathlib import Path
+    from cogs.custom_lb import FeatureDisableSelectView, SettingsPanelView
+    from cogs.verification import VerificationDashboardView
+
+    # Verify cog and asset files are removed
+    root = Path(__file__).resolve().parents[1]
+    assert not (root / "cogs" / "certificate.py").exists()
+    assert not (root / "assets" / "certificate_template").exists()
+    assert not (root / "assets" / "batch1").exists()
+
+    # Verify feature disable options do not include certificate
+    disable_view = FeatureDisableSelectView(MagicMock())
+    labels = [opt.label for opt in disable_view.feature.options]
+    values = [opt.value for opt in disable_view.feature.options]
+    assert "certificate" not in values
+    assert "Certificate" not in labels
+
+    # Verify Settings panel does not include Enable Certification
+    panel_view = SettingsPanelView(MagicMock())
+    button_labels = [item.label for item in panel_view.children if hasattr(item, "label")]
+    assert "Enable Certification" not in button_labels
+
+    # Verify Verification dashboard does not include Validate Certificate
+    v_view = VerificationDashboardView(MagicMock())
+    v_button_labels = [item.label for item in v_view.children if hasattr(item, "label")]
+    assert "Validate Certificate" not in v_button_labels
+    assert "Verify" in v_button_labels
+    assert "Check UUID" in v_button_labels
+
+    # Verify disabling certificate is rejected as unknown feature
+    label, err = _disable_feature_worker("test_guild_cert", "certificate")
+    assert err is not None
+    assert label is None
+
+
+

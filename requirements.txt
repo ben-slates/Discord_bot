@@ -15,4 +15,3 @@ pillow
 feedparser
 beautifulsoup4
 aiohttp
-python-docx

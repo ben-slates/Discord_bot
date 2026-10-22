@@ -132,27 +132,6 @@ class FeatureDisableModal(discord.ui.Modal, title="Disable Feature"):
         await self.cog.disable_feature_settings(interaction, feature)
 
 
-class CertificationSetupModal(discord.ui.Modal, title="Enable Certification"):
-    def __init__(self, cog):
-        super().__init__()
-        self.cog = cog
-        self.role_id = discord.ui.TextInput(label="Required role ID", required=True, max_length=25)
-        self.channel_id = discord.ui.TextInput(label="Certification channel ID", required=True, max_length=25)
-        self.add_item(self.role_id)
-        self.add_item(self.channel_id)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        role = interaction.guild.get_role(int(self.role_id.value.strip())) if self.role_id.value.strip().isdigit() else None
-        try:
-            channel = interaction.guild.get_channel(int(self.channel_id.value.strip()))
-        except (TypeError, ValueError):
-            channel = None
-        if not role or not isinstance(channel, discord.TextChannel):
-            await interaction.response.send_message("Enter a valid role ID and text-channel ID.", ephemeral=True)
-            return
-        await self.cog.enable_certification(interaction, role, channel)
-
-
 class HallOfFameSetupModal(discord.ui.Modal, title="Enable Hall of Fame"):
     def __init__(self, cog):
         super().__init__()
@@ -277,7 +256,7 @@ class FeatureDisableSelectView(SettingsErrorView):
                 ("Bot Logs", "bot_logs"), ("CVE and News", "cve_and_news"), ("Quote of the Day", "quote_of_day"), ("Support", "support"),
                 ("Attendance", "attendance"), ("Welcome Messages", "welcome"), ("Hall of Fame", "hall_of_fame"),
                 ("Leveling / XP", "leveling"), ("Leaderboard", "leaderboard"), ("Level-Up Announcements", "level_up_announcements"),
-                ("Verification", "verification"), ("Certificate", "certificate"), ("Clean Server", "clean_server"),
+                ("Verification", "verification"), ("Clean Server", "clean_server"),
             ]],
         )
         self.add_item(self.feature)
@@ -293,30 +272,6 @@ class FeatureDisableSelectView(SettingsErrorView):
             return
         await interaction.response.defer(ephemeral=True)
         await self.cog.disable_feature_settings(interaction, self.feature.values[0])
-
-
-class CertificationSelectView(SettingsErrorView):
-    def __init__(self, cog, guild):
-        super().__init__(timeout=300)
-        self.cog = cog
-        self.role = discord.ui.RoleSelect(placeholder="Select the required role")
-        self.channel = discord.ui.ChannelSelect(placeholder="Select the certification channel", channel_types=[discord.ChannelType.text])
-        self.add_item(self.role)
-        self.add_item(self.channel)
-        self.role.callback = self._selection_changed
-        self.channel.callback = self._selection_changed
-
-    async def _selection_changed(self, interaction):
-        await interaction.response.defer(ephemeral=True)
-
-    @discord.ui.button(label="Enable Certification", style=discord.ButtonStyle.success)
-    async def apply(self, interaction, button):
-        role = self.role.values[0] if self.role.values else None
-        channel = _resolve_selected_channel(interaction.guild, self.channel.values[0] if self.channel.values else None)
-        if not role or not isinstance(channel, discord.TextChannel):
-            await interaction.response.send_message("Select a role and text channel first.", ephemeral=True)
-            return
-        await self.cog.enable_certification(interaction, role, channel)
 
 
 class HallOfFameSelectView(SettingsErrorView):
@@ -535,12 +490,6 @@ class SettingsPanelView(SettingsErrorView):
             await interaction.response.defer(ephemeral=True)
             await interaction.followup.send("Select the feature to disable:", view=FeatureDisableSelectView(self.cog), ephemeral=True)
 
-    @discord.ui.button(label="Enable Certification", style=discord.ButtonStyle.primary)
-    async def certification(self, interaction, button):
-        if await self._admin(interaction):
-            await interaction.response.defer(ephemeral=True)
-            await interaction.followup.send("Select the required role and certification channel:", view=CertificationSelectView(self.cog, interaction.guild), ephemeral=True)
-
     @discord.ui.button(label="Enable Hall of Fame", style=discord.ButtonStyle.primary)
     async def hall_of_fame(self, interaction, button):
         if await self._admin(interaction):
@@ -660,7 +609,6 @@ def _disable_feature_worker(guild_id, option):
             "leaderboard": ("leaderboard_enabled", "leaderboard_channel", "Leaderboard"),
             "level_up_announcements": ("level_up_announcements_enabled", "level_up_announcements_channel", "Level-up announcements"),
             "verification": ("verification_enabled", "verification_channel", "Verification"),
-            "certificate": ("certificate_enabled", "certificate_channel", "Certificate generation"),
             "clean_server": ("clean_server_enabled", "clean_server_channel", "Clean Server"),
         }
         entry = fields.get(option)
@@ -674,7 +622,6 @@ def _disable_feature_worker(guild_id, option):
             "support": "support_dashboard_message_id",
             "attendance": "attendance_dashboard_message_id",
             "verification": "verification_dashboard_message_id",
-            "certificate": "certificate_dashboard_message_id",
         }.get(option)
         if dashboard_field:
             setattr(config, dashboard_field, None)
@@ -779,7 +726,6 @@ class CustomLBCog(commands.Cog):
                 "**Enable Feature** — enable Bot Logs, CVE/News, Quote of the Day, Support, Attendance, Welcome, Leveling / XP, Leaderboard, "
                 "Level-Up Announcements, Verification, or Clean Server by selecting the feature and channel/category from lists.\n"
                 "**Disable Feature** — disable an enabled feature without changing unrelated settings.\n"
-                "**Enable Certification** — choose the required role and certificate channel.\n"
                 "**Enable Hall of Fame** — choose the role, announcement channel, and warning channel.\n"
                 "**Leaderboard Settings** — set the main qualifying role or add/remove custom leaderboards."
             ),
@@ -945,33 +891,6 @@ class CustomLBCog(commands.Cog):
             db.commit()
             await interaction.response.send_message(
                 f"Main leaderboard role updated to {role.name}.",
-                ephemeral=True,
-            )
-        finally:
-            db.close()
-
-    async def enable_certification(self, interaction: discord.Interaction, role: discord.Role, channel: discord.TextChannel):
-        await interaction.response.defer(ephemeral=True)
-        db = SessionLocal()
-        try:
-            config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
-            if not config:
-                config = GuildConfig(guild_id=str(interaction.guild_id))
-                db.add(config)
-            if config.certificate_channel != str(channel.id):
-                config.certificate_dashboard_message_id = None
-            config.certificate_enabled = True
-            config.certificate_role = str(role.id)
-            config.certificate_channel = str(channel.id)
-            db.commit()
-            certificate_cog = self.bot.get_cog("CertificateCog")
-            if certificate_cog:
-                try:
-                    await certificate_cog.ensure_dashboard(interaction.guild, channel.id)
-                except Exception:
-                    logging.exception("Certificate enabled but dashboard creation failed for guild %s", interaction.guild_id)
-            await interaction.followup.send(
-                f"Certificate generation enabled for members with {role.mention} in {channel.mention}.",
                 ephemeral=True,
             )
         finally:
@@ -1227,14 +1146,6 @@ class CustomLBCog(commands.Cog):
                 config.verification_channel = None
                 db.commit()
                 await interaction.followup.send("Verification disabled. Existing verification records were preserved.", ephemeral=True)
-                return
-
-            if option.value == "certificate":
-                config.certificate_enabled = False
-                config.certificate_role = None
-                config.certificate_channel = None
-                db.commit()
-                await interaction.followup.send("Certificate generation disabled. Existing verification records were preserved.", ephemeral=True)
                 return
 
             if option.value == "clean_server":
