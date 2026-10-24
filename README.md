@@ -133,9 +133,9 @@ Use `/enable` and `/disable` as an administrator to configure per-guild features
 | `/remove\_custom\_leaderboard` | `channel` | Administrator. Removes that leaderboard. |
 | `/hall\_of\_fame` | template, five members, optional custom name | Administrator. Assigns/refreshes Hall of Fame entries and posts an image. |
 | `/hall\_of\_fame\_overall` | optional department, optional name | Administrator. Posts department progress. |
-| `/rank` | optional `member` | Requires enabled leaderboard and its configured channel. Shows XP, level, rank, and daily XP. |
+| `/rank` | optional `member` | Requires enabled level-up feature and its configured channel. Shows XP, level, rank, and daily XP. |
 | `/leaderboard` | none | Requires enabled leaderboard/channel. Shows main or channel-specific leaderboard. |
-| `/rankcard` | optional `member` | Requires enabled leaderboard/channel. Generates a rank card. |
+| `/rankcard` | optional `member` | Requires enabled level-up feature and its configured channel. Generates a rank card. |
 | `/stats` | none | Requires enabled attendance and its configured channel. |
 | `/export` | optional `month`, `day`, `user` | Administrator; sends attendance CSV. |
 | `/today` | none | Shows current-day attendance in the attendance channel. |

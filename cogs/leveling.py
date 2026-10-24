@@ -14,6 +14,7 @@ import os
 from utils.leaderboard import (
     get_channel_members,
     get_leaderboard_channel_id,
+    get_level_up_channel_id,
     get_main_leaderboard_role_ids,
     should_include_member_for_custom_leaderboard,
     should_include_member_for_main_leaderboard,
@@ -177,9 +178,9 @@ class LevelingCog(commands.Cog):
         db = SessionLocal()
         try:
             config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
-            channel_id = get_leaderboard_channel_id(config)
+            channel_id = get_level_up_channel_id(config)
             if not channel_id:
-                await interaction.response.send_message("Leaderboard is not enabled for this server.", ephemeral=True)
+                await interaction.response.send_message("Level-up feature is not enabled for this server.", ephemeral=True)
                 return
             if str(interaction.channel_id) != channel_id:
                 await interaction.response.send_message(f"This command can only be used in <#{channel_id}>.", ephemeral=True)
@@ -294,10 +295,10 @@ class LevelingCog(commands.Cog):
                 if not should_include_member_for_main_leaderboard(discord_user, allowed_role_ids):
                     continue
                 ranked_users.append(user)
-                if len(ranked_users) >= 10:
+                if len(ranked_users) >= 5:
                     break
             
-            embed = discord.Embed(title="Community Leaderboard", description="Top 10 users by total XP.", color=discord.Color.gold())
+            embed = discord.Embed(title="Community Leaderboard", description="Top 5 users by total XP.", color=discord.Color.gold())
             if not ranked_users:
                 embed.description = "No leaderboard data is available yet."
                 await interaction.response.send_message(embed=embed)
@@ -325,9 +326,9 @@ class LevelingCog(commands.Cog):
         db = SessionLocal()
         try:
             config = db.query(GuildConfig).filter_by(guild_id=str(interaction.guild_id)).first()
-            channel_id = get_leaderboard_channel_id(config)
+            channel_id = get_level_up_channel_id(config)
             if not channel_id:
-                await interaction.response.send_message("Leaderboard is not enabled for this server.", ephemeral=True)
+                await interaction.response.send_message("Level-up feature is not enabled for this server.", ephemeral=True)
                 return
             if str(interaction.channel_id) != channel_id:
                 await interaction.response.send_message(f"This command can only be used in <#{channel_id}>.", ephemeral=True)

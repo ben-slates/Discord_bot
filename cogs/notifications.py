@@ -103,7 +103,7 @@ class NotificationsCog(commands.Cog):
                             print(f"Failed to delete old leaderboard: {delete_err}")
 
                         logging.info("Generating leaderboard for guild %s", guild.id)
-                        embed = discord.Embed(title="Morning Leaderboard Update", description="Top 10 users by total XP.", color=discord.Color.gold())
+                        embed = discord.Embed(title="Morning Leaderboard Update", description="Top 5 users by total XP.", color=discord.Color.gold())
                         allowed_role_ids = await run_db(_get_main_lb_role_ids, config.guild_id)
                         top_users = []
                         # Fetch top users from DB in thread
@@ -115,7 +115,7 @@ class NotificationsCog(commands.Cog):
                             if not should_include_member_for_main_leaderboard(member, allowed_role_ids):
                                 continue
                             top_users.append(user)
-                            if len(top_users) >= 10:
+                            if len(top_users) >= 5:
                                 break
                         
                         if not top_users:

@@ -24,6 +24,16 @@ def get_leaderboard_channel_id(config) -> str | None:
     return getattr(config, "leaderboard_channel", None)
 
 
+def get_level_up_channel_id(config) -> str | None:
+    if not config:
+        return None
+    if getattr(config, "level_up_announcements_enabled", False):
+        return getattr(config, "level_up_announcements_channel", None) or getattr(config, "leveling_channel", None)
+    if getattr(config, "leveling_enabled", False):
+        return getattr(config, "leveling_channel", None) or getattr(config, "level_up_announcements_channel", None)
+    return None
+
+
 def should_include_member_for_custom_leaderboard(member, required_role_ids=None) -> bool:
     if required_role_ids:
         allowed = {str(role_id) for role_id in required_role_ids if str(role_id).strip()}
