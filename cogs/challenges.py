@@ -10,6 +10,7 @@ Provides:
 
 import io
 import re
+import time
 import hmac
 import hashlib
 import datetime
@@ -28,6 +29,7 @@ from database import (
     Challenge,
     ChallengeWinner,
     ChallengePublication,
+    UserData,
 )
 from utils.db_executor import run_db
 
@@ -149,6 +151,39 @@ def _get_latest_publication_worker(guild_id: str, pub_type: str) -> dict | None:
         db.close()
 
 
+def _award_challenge_xp(db, guild_id: str, user_id: int, rank: int | None) -> int:
+    """Awards XP for solving a challenge:
+    - Base: 50 XP
+    - 1st Blood: 50 + 60 = 110 XP
+    - 2nd Blood: 50 + 30 = 80 XP
+    - 3rd Blood: 50 + 15 = 65 XP
+    - Subsequent solvers: 50 XP
+    """
+    if rank == 1:
+        xp_to_award = 50 + 60
+    elif rank == 2:
+        xp_to_award = 50 + 30
+    elif rank == 3:
+        xp_to_award = 50 + 15
+    else:
+        xp_to_award = 50
+
+    user = db.query(UserData).filter_by(guild_id=str(guild_id), user_id=int(user_id)).first()
+    if not user:
+        user = UserData(guild_id=str(guild_id), user_id=int(user_id), xp=0, level=1)
+        db.add(user)
+
+    user.xp = (user.xp or 0) + xp_to_award
+    user.last_active_at = datetime.datetime.now(datetime.timezone.utc)
+    try:
+        from utils.xp import calculate_level
+        user.level = calculate_level(user.xp)
+    except Exception:
+        pass
+
+    return xp_to_award
+
+
 def _get_active_challenge_worker(guild_id: str) -> dict | None:
     db = SessionLocal()
     try:
@@ -158,6 +193,7 @@ def _get_active_challenge_worker(guild_id: str) -> dict | None:
         winners = (
             db.query(ChallengeWinner)
             .filter_by(challenge_id=challenge.id)
+            .filter(ChallengeWinner.rank <= 3)
             .order_by(ChallengeWinner.rank.asc())
             .all()
         )
@@ -180,7 +216,7 @@ def _get_active_challenge_worker(guild_id: str) -> dict | None:
 
 
 def _solve_flag_worker(guild_id: str, user_id: int, submitted_flag: str) -> dict:
-    """Atomic flag verification and leaderboard assignment."""
+    """Atomic flag verification and leaderboard assignment with XP reward."""
     db = SessionLocal()
     try:
         # 1. Ensure Challenges is enabled
@@ -209,40 +245,18 @@ def _solve_flag_worker(guild_id: str, user_id: int, submitted_flag: str) -> dict
         if existing:
             return {
                 "status": "already_solved",
-                "rank": existing.rank,
+                "rank": existing.rank if existing.rank <= 3 else None,
                 "challenge_id": challenge.id,
                 "name": challenge.name,
             }
 
-        # 5. Check occupied ranks and atomically assign rank 1..3
-        winners = (
-            db.query(ChallengeWinner)
-            .filter_by(challenge_id=challenge.id)
-            .order_by(ChallengeWinner.rank.asc())
-            .all()
-        )
+        # 5. Check occupied ranks and atomically assign rank and XP
+        max_attempts = 15
+        assigned_rank = None
+        is_top_three = False
+        xp_awarded = 0
 
-        if len(winners) >= 3:
-            return {
-                "status": "late_solve",
-                "challenge_id": challenge.id,
-                "name": challenge.name,
-            }
-
-        assigned_rank = len(winners) + 1
-        new_winner = ChallengeWinner(
-            challenge_id=challenge.id,
-            discord_user_id=int(user_id),
-            rank=assigned_rank,
-            solved_at=datetime.datetime.now(datetime.timezone.utc),
-        )
-        db.add(new_winner)
-
-        try:
-            db.commit()
-        except IntegrityError:
-            db.rollback()
-            # Concurrency collision handled: re-verify state
+        for attempt in range(max_attempts):
             existing = (
                 db.query(ChallengeWinner)
                 .filter_by(challenge_id=challenge.id, discord_user_id=int(user_id))
@@ -251,23 +265,21 @@ def _solve_flag_worker(guild_id: str, user_id: int, submitted_flag: str) -> dict
             if existing:
                 return {
                     "status": "already_solved",
-                    "rank": existing.rank,
+                    "rank": existing.rank if existing.rank <= 3 else None,
                     "challenge_id": challenge.id,
                     "name": challenge.name,
                 }
+
             winners = (
                 db.query(ChallengeWinner)
                 .filter_by(challenge_id=challenge.id)
                 .order_by(ChallengeWinner.rank.asc())
                 .all()
             )
-            if len(winners) >= 3:
-                return {
-                    "status": "late_solve",
-                    "challenge_id": challenge.id,
-                    "name": challenge.name,
-                }
+
             assigned_rank = len(winners) + 1
+            is_top_three = (assigned_rank <= 3)
+
             new_winner = ChallengeWinner(
                 challenge_id=challenge.id,
                 discord_user_id=int(user_id),
@@ -275,34 +287,62 @@ def _solve_flag_worker(guild_id: str, user_id: int, submitted_flag: str) -> dict
                 solved_at=datetime.datetime.now(datetime.timezone.utc),
             )
             db.add(new_winner)
+            xp_awarded = _award_challenge_xp(db, guild_id, user_id, assigned_rank if is_top_three else None)
+
             try:
                 db.commit()
+                break
             except IntegrityError:
                 db.rollback()
+                time.sleep(0.005 * (attempt + 1))
+        else:
+            existing = (
+                db.query(ChallengeWinner)
+                .filter_by(challenge_id=challenge.id, discord_user_id=int(user_id))
+                .first()
+            )
+            if existing:
                 return {
-                    "status": "late_solve",
+                    "status": "already_solved",
+                    "rank": existing.rank if existing.rank <= 3 else None,
                     "challenge_id": challenge.id,
                     "name": challenge.name,
                 }
+            return {
+                "status": "error",
+                "challenge_id": challenge.id,
+                "name": challenge.name,
+            }
 
-        # Fetch complete updated leaderboard for embed refresh
-        all_winners = (
+        # Fetch top-three winners for embed refresh
+        top_winners = (
             db.query(ChallengeWinner)
             .filter_by(challenge_id=challenge.id)
+            .filter(ChallengeWinner.rank <= 3)
             .order_by(ChallengeWinner.rank.asc())
             .all()
         )
 
-        return {
-            "status": "success",
-            "rank": assigned_rank,
-            "challenge_id": challenge.id,
-            "name": challenge.name,
-            "url": challenge.url,
-            "announcement_channel_id": challenge.announcement_channel_id,
-            "announcement_message_id": challenge.announcement_message_id,
-            "winners": [(w.rank, w.discord_user_id) for w in all_winners],
-        }
+        if is_top_three:
+            return {
+                "status": "success",
+                "rank": assigned_rank,
+                "xp_awarded": xp_awarded,
+                "challenge_id": challenge.id,
+                "name": challenge.name,
+                "url": challenge.url,
+                "announcement_channel_id": challenge.announcement_channel_id,
+                "announcement_message_id": challenge.announcement_message_id,
+                "winners": [(w.rank, w.discord_user_id) for w in top_winners],
+            }
+        else:
+            return {
+                "status": "late_solve",
+                "rank": assigned_rank,
+                "xp_awarded": xp_awarded,
+                "challenge_id": challenge.id,
+                "name": challenge.name,
+            }
     finally:
         db.close()
 
@@ -410,21 +450,29 @@ class VerifyFlagModal(discord.ui.Modal, title="Submit Challenge Flag"):
             )
         elif status == "already_solved":
             rank = result.get("rank")
-            rank_str = format_rank_label(rank) if rank else "a qualifying position"
-            await interaction.followup.send(
-                f"You have already solved this challenge! Your position: **{rank_str}**.",
-                ephemeral=True,
-            )
+            if rank and rank <= 3:
+                rank_str = format_rank_label(rank)
+                await interaction.followup.send(
+                    f"You have already solved this challenge! Your position: **{rank_str}**.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.followup.send(
+                    "You have already solved this challenge and claimed your XP!",
+                    ephemeral=True,
+                )
         elif status == "late_solve":
+            xp = result.get("xp_awarded", 50)
             await interaction.followup.send(
-                "🎉 That is the correct flag! However, the top-three leaderboard positions have already been claimed.",
+                f"🎉 That is the correct flag! You've been awarded **+{xp} XP**!\n*(Note: The top-three leaderboard positions have already been claimed)*",
                 ephemeral=True,
             )
         elif status == "success":
             rank = result.get("rank")
             rank_str = format_rank_label(rank)
+            xp = result.get("xp_awarded")
             await interaction.followup.send(
-                f"🎉 Correct flag! Congratulations on claiming **{rank_str}**!",
+                f"🎉 Correct flag! Congratulations on claiming **{rank_str}**!\n⭐ **+{xp} XP** has been added to your profile!",
                 ephemeral=True,
             )
 

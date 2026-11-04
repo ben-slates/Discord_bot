@@ -13,6 +13,7 @@ import discord
 from database import (
     SessionLocal,
     GuildConfig,
+    UserData,
     ChallengeSettings,
     Challenge,
     ChallengeWinner,
@@ -50,6 +51,7 @@ def _cleanup_guild(guild_id: str):
         db.query(ChallengePublication).filter_by(guild_id=guild_id).delete()
         db.query(ChallengeSettings).filter_by(guild_id=guild_id).delete()
         db.query(GuildConfig).filter_by(guild_id=guild_id).delete()
+        db.query(UserData).filter_by(guild_id=guild_id).delete()
         db.commit()
     finally:
         db.close()
@@ -196,35 +198,62 @@ def test_flag_verification_full_cycle():
     res_bad = _solve_flag_worker(guild_id, 1001, "CTF{wrong_flag}")
     assert res_bad["status"] == "incorrect"
 
-    # 2. First solver gets First Blood (rank 1)
+    # 2. First solver gets First Blood (rank 1) and 110 XP (50 + 60)
     res_u1 = _solve_flag_worker(guild_id, 1001, correct_flag)
     assert res_u1["status"] == "success"
     assert res_u1["rank"] == 1
+    assert res_u1["xp_awarded"] == 110
     assert len(res_u1["winners"]) == 1
 
-    # 3. Duplicate submission by User 1 is rejected
+    # 3. Duplicate submission by User 1 is rejected and awards no extra XP
     res_u1_dup = _solve_flag_worker(guild_id, 1001, correct_flag)
     assert res_u1_dup["status"] == "already_solved"
     assert res_u1_dup["rank"] == 1
 
-    # 4. Second solver gets Second Blood (rank 2)
+    # 4. Second solver gets Second Blood (rank 2) and 80 XP (50 + 30)
     res_u2 = _solve_flag_worker(guild_id, 1002, correct_flag)
     assert res_u2["status"] == "success"
     assert res_u2["rank"] == 2
+    assert res_u2["xp_awarded"] == 80
     assert len(res_u2["winners"]) == 2
 
-    # 5. Third solver gets Third Blood (rank 3)
+    # 5. Third solver gets Third Blood (rank 3) and 65 XP (50 + 15)
     res_u3 = _solve_flag_worker(guild_id, 1003, correct_flag)
     assert res_u3["status"] == "success"
     assert res_u3["rank"] == 3
+    assert res_u3["xp_awarded"] == 65
     assert len(res_u3["winners"]) == 3
 
-    # 6. Fourth and subsequent solvers get acknowledged but do NOT get leaderboard positions
+    # 6. Fourth and subsequent solvers get acknowledged, receive base 50 XP, but do NOT enter top-3 leaderboard
     res_u4 = _solve_flag_worker(guild_id, 1004, correct_flag)
     assert res_u4["status"] == "late_solve"
+    assert res_u4["xp_awarded"] == 50
+
+    # Duplicate late solver submission is rejected and gives no duplicate XP
+    res_u4_dup = _solve_flag_worker(guild_id, 1004, correct_flag)
+    assert res_u4_dup["status"] == "already_solved"
 
     res_u5 = _solve_flag_worker(guild_id, 1005, correct_flag)
     assert res_u5["status"] == "late_solve"
+    assert res_u5["xp_awarded"] == 50
+
+    # Verify XP balances in UserData database
+    db = SessionLocal()
+    try:
+        from database import UserData
+        u1_rec = db.query(UserData).filter_by(guild_id=guild_id, user_id=1001).first()
+        u2_rec = db.query(UserData).filter_by(guild_id=guild_id, user_id=1002).first()
+        u3_rec = db.query(UserData).filter_by(guild_id=guild_id, user_id=1003).first()
+        u4_rec = db.query(UserData).filter_by(guild_id=guild_id, user_id=1004).first()
+        u5_rec = db.query(UserData).filter_by(guild_id=guild_id, user_id=1005).first()
+
+        assert u1_rec.xp == 110  # 50 + 60
+        assert u2_rec.xp == 80   # 50 + 30
+        assert u3_rec.xp == 65   # 50 + 15
+        assert u4_rec.xp == 50   # 50
+        assert u5_rec.xp == 50   # 50
+    finally:
+        db.close()
 
     # Check database state
     active = _get_active_challenge_worker(guild_id)
