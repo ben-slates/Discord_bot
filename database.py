@@ -206,6 +206,9 @@ class GuildConfig(Base):
     verification_enabled = Column(Boolean, default=False)
     verification_channel = Column(String, nullable=True)
     verification_dashboard_message_id = Column(String, nullable=True)
+    # Challenges
+    challenges_enabled = Column(Boolean, default=False)
+    challenges_channel = Column(String, nullable=True)
     # Note: legacy `support_feature_enabled` removed; `support_enabled` used instead
 
 class UserData(Base):
@@ -328,6 +331,52 @@ class WelcomeDMDelivery(Base):
     delivered_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
 
     __table_args__ = (UniqueConstraint("guild_id", "user_id", name="uq_welcome_dm_delivery"),)
+
+
+class ChallengeSettings(Base):
+    __tablename__ = "challenge_settings"
+    guild_id = Column(String, primary_key=True)
+    enabled = Column(Boolean, default=False, nullable=False)
+    announcement_channel_id = Column(String, nullable=True)
+
+
+class Challenge(Base):
+    __tablename__ = "challenges"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    guild_id = Column(String, nullable=False, index=True)
+    name = Column(String, nullable=False)
+    url = Column(String, nullable=False)
+    flag_hash = Column(String(64), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    is_active = Column(Boolean, default=True, nullable=False)
+    announcement_channel_id = Column(String, nullable=True)
+    announcement_message_id = Column(String, nullable=True)
+
+
+class ChallengeWinner(Base):
+    __tablename__ = "challenge_winners"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    challenge_id = Column(Integer, ForeignKey("challenges.id", ondelete="CASCADE"), nullable=False, index=True)
+    discord_user_id = Column(BigInteger, nullable=False, index=True)
+    rank = Column(Integer, nullable=False)
+    solved_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("challenge_id", "discord_user_id", name="uq_challenge_winner_user"),
+        UniqueConstraint("challenge_id", "rank", name="uq_challenge_winner_rank"),
+    )
+
+
+class ChallengePublication(Base):
+    __tablename__ = "challenge_publications"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    guild_id = Column(String, nullable=False, index=True)
+    challenge_id = Column(Integer, ForeignKey("challenges.id", ondelete="CASCADE"), nullable=True, index=True)
+    publication_type = Column(String, nullable=False, default="writeup")  # 'challenge' or 'writeup'
+    channel_id = Column(String, nullable=False)
+    message_id = Column(String, nullable=False)
+    published_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
+
 
 Base.metadata.create_all(bind=engine)
 
@@ -534,6 +583,12 @@ def ensure_database_columns():
     if "level_up_announcements_channel" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN level_up_announcements_channel VARCHAR"))
+    if "challenges_enabled" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN challenges_enabled BOOLEAN DEFAULT FALSE"))
+    if "challenges_channel" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guild_config ADD COLUMN challenges_channel VARCHAR"))
     # ``users`` is a legacy table and is deliberately absent on fresh
     # multi-guild installations, which use ``guild_users`` from the start.
     if "users" in inspector.get_table_names():

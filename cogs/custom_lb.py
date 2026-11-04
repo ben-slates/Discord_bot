@@ -7,7 +7,7 @@ import discord
 from dotenv import load_dotenv
 from discord.ext import commands
 from discord import app_commands
-from database import SessionLocal, CustomLeaderboard, HallOfFameEntry, GuildConfig, UserData
+from database import SessionLocal, CustomLeaderboard, HallOfFameEntry, GuildConfig, UserData, ChallengeSettings
 from utils.halloffame import render as render_halloffame
 from utils.leaderboard import get_leaderboard_channel_id
 from utils.db_executor import run_db
@@ -203,6 +203,7 @@ class FeatureEnableSelectView(SettingsErrorView):
                 discord.SelectOption(label="Level-Up Announcements", value="level_up_announcements"),
                 discord.SelectOption(label="Verification", value="verification"),
                 discord.SelectOption(label="Clean Server (Server-wide)", value="clean_server"),
+                discord.SelectOption(label="Challenges", value="challenges"),
             ],
         )
         self.channel = discord.ui.ChannelSelect(
@@ -256,7 +257,7 @@ class FeatureDisableSelectView(SettingsErrorView):
                 ("Bot Logs", "bot_logs"), ("CVE and News", "cve_and_news"), ("Quote of the Day", "quote_of_day"), ("Support", "support"),
                 ("Attendance", "attendance"), ("Welcome Messages", "welcome"), ("Hall of Fame", "hall_of_fame"),
                 ("Leveling / XP", "leveling"), ("Leaderboard", "leaderboard"), ("Level-Up Announcements", "level_up_announcements"),
-                ("Verification", "verification"), ("Clean Server", "clean_server"),
+                ("Verification", "verification"), ("Clean Server", "clean_server"), ("Challenges", "challenges"),
             ]],
         )
         self.add_item(self.feature)
@@ -448,6 +449,7 @@ class FeatureTestView(SettingsErrorView):
                 discord.SelectOption(label="Level-Up Announcements", value="level_up_announcements"),
                 discord.SelectOption(label="Quote of the Day", value="quote_of_day"),
                 discord.SelectOption(label="Clean Server", value="clean_server"),
+                discord.SelectOption(label="Challenges", value="challenges"),
             ],
         )
         self.add_item(self.feature)
@@ -514,6 +516,15 @@ class SettingsPanelView(SettingsErrorView):
                 ephemeral=True,
             )
 
+    @discord.ui.button(label="Challenges Admin", style=discord.ButtonStyle.secondary)
+    async def challenges_admin(self, interaction, button):
+        if await self._admin(interaction):
+            cog = self.cog.bot.get_cog("ChallengesCog")
+            if cog:
+                await cog.send_admin_panel(interaction)
+            else:
+                await interaction.response.send_message("Challenges cog is not loaded.", ephemeral=True)
+
 
 def build_hall_of_fame_template(template_key, custom_name=None):
     if template_key != "custom":
@@ -567,6 +578,7 @@ def _enable_feature_worker(guild_id, option, channel_id=None):
             "level_up_announcements": ("level_up_announcements_enabled", "level_up_announcements_channel", "Level-up announcements"),
             "verification": ("verification_enabled", "verification_channel", "Verification"),
             "clean_server": ("clean_server_enabled", "clean_server_channel", "Clean Server"),
+            "challenges": ("challenges_enabled", "challenges_channel", "Challenges"),
         }
         entry = fields.get(option)
         if not entry:
@@ -585,6 +597,19 @@ def _enable_feature_worker(guild_id, option, channel_id=None):
             if not config.clean_server_activated_at:
                 config.clean_server_activated_at = datetime.datetime.now(datetime.timezone.utc)
             config.clean_server_last_run = None
+        if option == "challenges":
+            cs = db.query(ChallengeSettings).filter_by(guild_id=str(guild_id)).first()
+            if not cs:
+                cs = ChallengeSettings(
+                    guild_id=str(guild_id),
+                    enabled=True,
+                    announcement_channel_id=str(channel_id) if channel_id else None,
+                )
+                db.add(cs)
+            else:
+                cs.enabled = True
+                if channel_id:
+                    cs.announcement_channel_id = str(channel_id)
         db.commit()
         return label, None
     finally:
@@ -610,6 +635,7 @@ def _disable_feature_worker(guild_id, option):
             "level_up_announcements": ("level_up_announcements_enabled", "level_up_announcements_channel", "Level-up announcements"),
             "verification": ("verification_enabled", "verification_channel", "Verification"),
             "clean_server": ("clean_server_enabled", "clean_server_channel", "Clean Server"),
+            "challenges": ("challenges_enabled", "challenges_channel", "Challenges"),
         }
         entry = fields.get(option)
         if not entry:
@@ -633,6 +659,10 @@ def _disable_feature_worker(guild_id, option):
         if option == "clean_server":
             config.clean_server_last_run = None
             config.clean_server_activated_at = None
+        if option == "challenges":
+            cs = db.query(ChallengeSettings).filter_by(guild_id=str(guild_id)).first()
+            if cs:
+                cs.enabled = False
         db.commit()
         return label, None
     finally:
@@ -693,6 +723,7 @@ def _feature_test_config_worker(guild_id, option):
             "level_up_announcements": ("level_up_announcements_enabled", "level_up_announcements_channel", "Level-up announcements"),
             "quote_of_day": ("quote_of_day_enabled", "quote_of_day_channel", "Quote of the Day"),
             "clean_server": ("clean_server_enabled", "clean_server_channel", "Clean Server"),
+            "challenges": ("challenges_enabled", "challenges_channel", "Challenges"),
         }
         entry = fields.get(option)
         if not entry:
@@ -757,6 +788,14 @@ class CustomLBCog(commands.Cog):
         if not isinstance(channel, discord.TextChannel):
             await interaction.followup.send("This feature requires a text channel.", ephemeral=True)
             return
+        if option == "challenges" and interaction.guild:
+            perms = channel.permissions_for(interaction.guild.me)
+            if not (perms.view_channel and perms.send_messages):
+                await interaction.followup.send(
+                    f"I don't have permission to view or send messages in {channel.mention}. Please grant these permissions first.",
+                    ephemeral=True
+                )
+                return
         label, error = await run_db(_enable_feature_worker, interaction.guild_id, option, channel.id)
         if error:
             await interaction.followup.send(error, ephemeral=True)
@@ -844,6 +883,13 @@ class CustomLBCog(commands.Cog):
                     color=discord.Color.teal(),
                 )
                 embed.set_footer(text="Alan Kay")
+                await channel.send(embed=embed)
+            elif option == "challenges":
+                embed = discord.Embed(
+                    title="Challenges Announcement Test",
+                    description="This is a test notification confirming that the bot can post in this configured Challenges channel.",
+                    color=discord.Color.blurple(),
+                )
                 await channel.send(embed=embed)
             else:
                 await channel.send(f"✅ {label} test message from {interaction.user.mention}")

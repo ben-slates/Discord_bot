@@ -268,7 +268,7 @@ def test_no_legacy_brand_in_codebase():
     import subprocess
     target = "rynex" + "security"
     result = subprocess.run(
-        ["grep", "-rnI", "-i", "--exclude-dir=tests", "--exclude-dir=.pytest_cache", "--exclude-dir=.git", target, "."],
+        ["grep", "-rnI", "-i", "--exclude-dir=tests", "--exclude-dir=.pytest_cache", "--exclude-dir=.git", "--exclude-dir=venv", target, "."],
         capture_output=True,
         text=True,
     )

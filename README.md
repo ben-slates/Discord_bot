@@ -34,6 +34,8 @@ Watch the 18-second launch video: [`brag/brag.mp4`](brag/brag.mp4)
 
 - Whole-word forbidden-language filtering for ordinary messages, `/message`, and `/question`.
 
+- **CTF Challenges Management System**: Admin challenge setup with SHA-256 flag hashing, real-time public announcement embeds with persistent `Verify Flag` buttons, atomic and concurrency-safe First Blood / Second Blood / Third Blood leaderboard assignment, manual Markdown writeup publishing (with automatic `.md` file attachments for long solutions), and automated bot message replacement and cleanup.
+
 ## Architecture
 
 ```
@@ -149,6 +151,10 @@ Use `/enable` and `/disable` as an administrator to configure per-guild features
 | `/reopen` | none | Manage Messages; reopens a closed ticket. |
 | `/transcript` | none | Manage Messages; exports up to 500 ticket messages. |
 | `/closeall` | none | Administrator; closes all open tickets in the configured category. |
+| `/challenge-admin panel` | none | Administrator. Opens the Challenges management panel (Set Challenge, Send Writeup, Status). |
+| `/challenge-admin set` | none | Administrator. Opens the modal to publish a new challenge (Name, URL, Flag). |
+| `/challenge-admin writeup` | optional `content`, optional `file` | Administrator. Publishes an official Markdown writeup (as text or `.md` file attachment). |
+| `/challenge-admin status` | none | Administrator. Displays active challenge and leaderboard status. |
 
 
 Ticket AI responses include **Mark as Resolved** and **Talk to Human / Unsatisfied** persistent buttons. The latter stops AI replies for that ticket and alerts an administrator-named role when available.
