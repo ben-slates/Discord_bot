@@ -56,7 +56,14 @@ def _get_challenge_settings_worker(guild_id: str) -> dict:
         db.close()
 
 
-def _create_challenge_worker(guild_id: str, name: str, url: str, flag_hash: str) -> dict:
+def _create_challenge_worker(
+    guild_id: str,
+    name: str,
+    url: str,
+    flag_hash: str,
+    category: str = "General",
+    role_id: str | None = None,
+) -> dict:
     db = SessionLocal()
     try:
         # Mark previous active challenges for this guild as inactive
@@ -69,6 +76,8 @@ def _create_challenge_worker(guild_id: str, name: str, url: str, flag_hash: str)
             name=name,
             url=url,
             flag_hash=flag_hash,
+            category=category or "General",
+            role_id=str(role_id) if role_id else None,
             is_active=True,
             created_at=datetime.datetime.now(datetime.timezone.utc),
         )
@@ -79,6 +88,8 @@ def _create_challenge_worker(guild_id: str, name: str, url: str, flag_hash: str)
             "id": new_challenge.id,
             "guild_id": new_challenge.guild_id,
             "name": new_challenge.name,
+            "category": new_challenge.category,
+            "role_id": new_challenge.role_id,
             "url": new_challenge.url,
             "flag_hash": new_challenge.flag_hash,
             "created_at": new_challenge.created_at,
@@ -189,19 +200,28 @@ def _get_active_challenge_worker(guild_id: str) -> dict | None:
     try:
         challenge = db.query(Challenge).filter_by(guild_id=str(guild_id), is_active=True).first()
         if not challenge:
+            challenge = (
+                db.query(Challenge)
+                .filter_by(guild_id=str(guild_id))
+                .order_by(Challenge.id.desc())
+                .first()
+            )
+        if not challenge:
             return None
-        winners = (
+        all_winners = (
             db.query(ChallengeWinner)
             .filter_by(challenge_id=challenge.id)
-            .filter(ChallengeWinner.rank <= 3)
             .order_by(ChallengeWinner.rank.asc())
             .all()
         )
+        top_winners = [w for w in all_winners if w.rank <= 3]
         return {
             "challenge": {
                 "id": challenge.id,
                 "guild_id": challenge.guild_id,
                 "name": challenge.name,
+                "category": getattr(challenge, "category", "General") or "General",
+                "role_id": getattr(challenge, "role_id", None),
                 "url": challenge.url,
                 "flag_hash": challenge.flag_hash,
                 "created_at": challenge.created_at,
@@ -209,7 +229,8 @@ def _get_active_challenge_worker(guild_id: str) -> dict | None:
                 "announcement_channel_id": challenge.announcement_channel_id,
                 "announcement_message_id": challenge.announcement_message_id,
             },
-            "winners": [(w.rank, w.discord_user_id) for w in winners],
+            "winners": [(w.rank, w.discord_user_id) for w in top_winners],
+            "total_solvers": len(all_winners),
         }
     finally:
         db.close()
@@ -330,6 +351,7 @@ def _solve_flag_worker(guild_id: str, user_id: int, submitted_flag: str) -> dict
                 "xp_awarded": xp_awarded,
                 "challenge_id": challenge.id,
                 "name": challenge.name,
+                "category": getattr(challenge, "category", "General") or "General",
                 "url": challenge.url,
                 "announcement_channel_id": challenge.announcement_channel_id,
                 "announcement_message_id": challenge.announcement_message_id,
@@ -342,6 +364,7 @@ def _solve_flag_worker(guild_id: str, user_id: int, submitted_flag: str) -> dict
                 "xp_awarded": xp_awarded,
                 "challenge_id": challenge.id,
                 "name": challenge.name,
+                "category": getattr(challenge, "category", "General") or "General",
             }
     finally:
         db.close()
@@ -351,12 +374,19 @@ def _solve_flag_worker(guild_id: str, user_id: int, submitted_flag: str) -> dict
 # Embed Builders
 # ---------------------------------------------------------------------------
 
-def build_challenge_embed(name: str, url: str, winners: list[tuple[int, int]]) -> discord.Embed:
-    """Builds the public challenge announcement embed with real-time leaderboard."""
+def build_challenge_embed(
+    name: str,
+    url: str,
+    winners: list[tuple[int, int]],
+    category: str = "General",
+) -> discord.Embed:
+    """Builds the public challenge announcement embed with real-time leaderboard and category."""
+    cat = category or "General"
     embed = discord.Embed(
         title="Rynex Technologies — CTF Challenge",
         description=(
-            f"**Challenge:** {name}\n\n"
+            f"**Challenge:** {name}\n"
+            f"**Category:** `{cat}`\n\n"
             "A new challenge is now available! Click **Download Challenge Files** below to retrieve the challenge files, extract the archive with the password provided, and submit the correct flag to claim your position on the leaderboard.\n\n"
             f"🔗 **Download Link:** [{name}.zip]({url})"
         ),
@@ -385,14 +415,38 @@ def build_challenge_embed(name: str, url: str, winners: list[tuple[int, int]]) -
     return embed
 
 
-def build_writeup_embed(challenge_name: str, description: str) -> discord.Embed:
-    """Builds the official writeup announcement embed."""
+def build_writeup_embed(
+    challenge_name: str,
+    description: str,
+    winners: list[tuple[int, int]] | None = None,
+    category: str | None = None,
+    total_solvers: int = 0,
+) -> discord.Embed:
+    """Builds the official writeup announcement embed including the challenge leaderboard."""
     embed = discord.Embed(
         title=f"Rynex Technologies — Challenge Writeup: {challenge_name}",
         description=description,
         color=discord.Color.teal(),
         timestamp=datetime.datetime.now(datetime.timezone.utc),
     )
+    if category and category != "General":
+        embed.add_field(name="Category", value=f"`{category}`", inline=True)
+
+    winner_map = {rank: uid for rank, uid in (winners or [])}
+    first_blood = f"<@{winner_map[1]}>" if 1 in winner_map else "Available"
+    second_blood = f"<@{winner_map[2]}>" if 2 in winner_map else "Available"
+    third_blood = f"<@{winner_map[3]}>" if 3 in winner_map else "Available"
+
+    leaderboard_display = (
+        f"🥇 **First Blood** — {first_blood}\n"
+        f"🥈 **Second Blood** — {second_blood}\n"
+        f"🥉 **Third Blood** — {third_blood}"
+    )
+    if total_solvers > 3:
+        extra_count = total_solvers - 3
+        leaderboard_display += f"\n*(+ {extra_count} additional solver{'s' if extra_count > 1 else ''})*"
+
+    embed.add_field(name="🏆 Challenge Leaderboard", value=leaderboard_display, inline=False)
     embed.set_footer(text="Official Solution & Walkthrough")
     return embed
 
@@ -484,6 +538,7 @@ class VerifyFlagModal(discord.ui.Modal, title="Submit Challenge Flag"):
                 result.get("name"),
                 result.get("url"),
                 result.get("winners", []),
+                category=result.get("category", "General"),
             )
         else:
             await interaction.followup.send(
@@ -533,8 +588,42 @@ class ChallengeVerificationPersistentView(discord.ui.View):
 # Admin Modals and Views
 # ---------------------------------------------------------------------------
 
+class CategorySelect(discord.ui.Select):
+    """Dropdown menu for selecting challenge category."""
+
+    def __init__(self, selected: str = "General"):
+        options = [
+            discord.SelectOption(label="General", description="General CTF Challenge", emoji="🎯", default=(selected == "General")),
+            discord.SelectOption(label="Web", description="Web Security / Exploitation", emoji="🌐", default=(selected == "Web")),
+            discord.SelectOption(label="Crypto", description="Cryptography & Ciphers", emoji="🔐", default=(selected == "Crypto")),
+            discord.SelectOption(label="Reverse Engineering", description="Reverse Engineering / Binaries", emoji="⚙️", default=(selected == "Reverse Engineering")),
+            discord.SelectOption(label="Forensics", description="Digital Forensics & Memory Analysis", emoji="🔍", default=(selected == "Forensics")),
+            discord.SelectOption(label="Pwn", description="Binary Exploitation / Memory Corruption", emoji="💥", default=(selected == "Pwn")),
+            discord.SelectOption(label="OSINT", description="Open Source Intelligence", emoji="🕵️", default=(selected == "OSINT")),
+            discord.SelectOption(label="Misc", description="Miscellaneous Challenges", emoji="🧩", default=(selected == "Misc")),
+        ]
+        super().__init__(
+            placeholder="Select Challenge Category (Dropdown)...",
+            min_values=1,
+            max_values=1,
+            options=options,
+            row=0,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        self.view.selected_category = self.values[0]
+        for opt in self.options:
+            opt.default = (opt.value == self.values[0])
+        await interaction.response.edit_message(view=self.view)
+
+
 class SetChallengeModal(discord.ui.Modal, title="Set CTF Challenge"):
-    def __init__(self, cog: "ChallengesCog"):
+    def __init__(
+        self,
+        cog: "ChallengesCog",
+        default_category: str | None = None,
+        default_role_id: str | None = None,
+    ):
         super().__init__()
         self.cog = cog
         self.name = discord.ui.TextInput(
@@ -542,6 +631,13 @@ class SetChallengeModal(discord.ui.Modal, title="Set CTF Challenge"):
             placeholder="e.g. Cipherfall",
             required=True,
             max_length=100,
+        )
+        self.category = discord.ui.TextInput(
+            label="Category",
+            placeholder="e.g. Web, Crypto, Reverse, Forensics, Pwn, OSINT",
+            required=False,
+            max_length=50,
+            default=default_category or "General",
         )
         self.url = discord.ui.TextInput(
             label="Challenge ZIP URL",
@@ -555,20 +651,31 @@ class SetChallengeModal(discord.ui.Modal, title="Set CTF Challenge"):
             required=True,
             max_length=200,
         )
+        self.role = discord.ui.TextInput(
+            label="Ping Role (Optional ID or @Role)",
+            placeholder="Paste Role ID or @Role to tag (optional)",
+            required=False,
+            max_length=100,
+            default=str(default_role_id) if default_role_id else "",
+        )
         self.add_item(self.name)
+        self.add_item(self.category)
         self.add_item(self.url)
         self.add_item(self.flag)
+        self.add_item(self.role)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
         name = (self.name.value or "").strip()
+        category = (self.category.value or "").strip() or "General"
         url = (self.url.value or "").strip()
         flag = (self.flag.value or "").strip()
+        role_raw = (self.role.value or "").strip()
 
         if not name or not url or not flag:
             await interaction.followup.send(
-                "All fields (Name, URL, Flag) are required.", ephemeral=True
+                "Challenge Name, URL, and Flag are required.", ephemeral=True
             )
             return
 
@@ -580,18 +687,47 @@ class SetChallengeModal(discord.ui.Modal, title="Set CTF Challenge"):
             )
             return
 
+        role_id_to_tag = None
+        if role_raw:
+            role_match = re.match(r"^<@&?(\d+)>$", role_raw)
+            if role_match:
+                role_id_to_tag = int(role_match.group(1))
+            elif role_raw.isdigit():
+                role_id_to_tag = int(role_raw)
+            else:
+                clean_name = role_raw.lstrip("@").strip().lower()
+                matched_role = discord.utils.find(
+                    lambda r: r.name.lower() == clean_name,
+                    interaction.guild.roles,
+                )
+                if matched_role:
+                    role_id_to_tag = matched_role.id
+
+            if not role_id_to_tag or not interaction.guild.get_role(role_id_to_tag):
+                await interaction.followup.send(
+                    f"❌ Could not find a role matching `{role_raw}` in this server. Please provide a valid Role ID or mention.",
+                    ephemeral=True,
+                )
+                return
+
         # Store SHA-256 hash only. Never store or log plaintext flag.
         flag_hash = hashlib.sha256(flag.encode("utf-8")).hexdigest()
 
         err, channel_mention = await self.cog.publish_new_challenge(
-            interaction.guild, name, url, flag_hash
+            interaction.guild,
+            name,
+            url,
+            flag_hash,
+            category=category,
+            role_id=role_id_to_tag,
         )
         if err:
             await interaction.followup.send(f"❌ Failed to publish challenge: {err}", ephemeral=True)
             return
 
+        tag_info = f" (tagged <@&{role_id_to_tag}>)" if role_id_to_tag else ""
         await interaction.followup.send(
-            f"✅ Challenge **{name}** published successfully in {channel_mention}!",
+            f"✅ Challenge **{name}** [{category}] published successfully in {channel_mention}!{tag_info}",
             ephemeral=True,
         )
 
@@ -631,6 +767,8 @@ class ChallengesAdminView(discord.ui.View):
     def __init__(self, cog: "ChallengesCog"):
         super().__init__(timeout=300)
         self.cog = cog
+        self.selected_category = "General"
+        self.add_item(CategorySelect(self.selected_category))
 
     async def _admin_check(self, interaction: discord.Interaction) -> bool:
         if not interaction.user.guild_permissions.administrator:
@@ -640,19 +778,21 @@ class ChallengesAdminView(discord.ui.View):
             return False
         return True
 
-    @discord.ui.button(label="Set Challenge", style=discord.ButtonStyle.primary, emoji="🎯")
+    @discord.ui.button(label="Set Challenge", style=discord.ButtonStyle.primary, emoji="🎯", row=1)
     async def set_challenge_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._admin_check(interaction):
             return
-        await interaction.response.send_modal(SetChallengeModal(self.cog))
+        await interaction.response.send_modal(
+            SetChallengeModal(self.cog, default_category=self.selected_category)
+        )
 
-    @discord.ui.button(label="Send Writeup", style=discord.ButtonStyle.secondary, emoji="📄")
+    @discord.ui.button(label="Send Writeup", style=discord.ButtonStyle.secondary, emoji="📄", row=1)
     async def send_writeup_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._admin_check(interaction):
             return
         await interaction.response.send_modal(SendWriteupContentModal(self.cog))
 
-    @discord.ui.button(label="Status & Leaderboard", style=discord.ButtonStyle.secondary, emoji="📊")
+    @discord.ui.button(label="Status & Leaderboard", style=discord.ButtonStyle.secondary, emoji="📊", row=1)
     async def status_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._admin_check(interaction):
             return
@@ -713,6 +853,7 @@ class ChallengesCog(commands.Cog):
         challenge_name: str,
         challenge_url: str,
         winners: list[tuple[int, int]],
+        category: str = "General",
     ):
         """Updates the original challenge announcement message's leaderboard."""
         if not channel_id or not message_id:
@@ -734,14 +875,20 @@ class ChallengesCog(commands.Cog):
             except (discord.NotFound, discord.Forbidden):
                 return
 
-            embed = build_challenge_embed(challenge_name, challenge_url, winners)
+            embed = build_challenge_embed(challenge_name, challenge_url, winners, category=category)
             view = ChallengeVerificationPersistentView(self, challenge_url=challenge_url)
             await msg.edit(embed=embed, view=view)
         except Exception as exc:
             logging.warning("Could not update challenge announcement %s: %s", message_id, exc)
 
     async def publish_new_challenge(
-        self, guild: discord.Guild, name: str, url: str, flag_hash: str
+        self,
+        guild: discord.Guild,
+        name: str,
+        url: str,
+        flag_hash: str,
+        category: str = "General",
+        role_id: int | str | None = None,
     ) -> tuple[str | None, str | None]:
         """Publishes a new challenge and handles previous announcement replacement."""
         guild_id = str(guild.id)
@@ -785,13 +932,27 @@ class ChallengesCog(commands.Cog):
                 logging.info("Previous challenge announcement cleanup handled: %s", exc)
 
         # 2. Store new challenge in DB (marks previous inactive)
-        new_ch = await run_db(_create_challenge_worker, guild_id, name, url, flag_hash)
+        new_ch = await run_db(
+            _create_challenge_worker,
+            guild_id,
+            name,
+            url,
+            flag_hash,
+            category,
+            str(role_id) if role_id else None,
+        )
 
         # 3. Post public announcement embed with persistent Verify Flag button and Download link button
-        embed = build_challenge_embed(name, url, winners=[])
+        embed = build_challenge_embed(name, url, winners=[], category=category)
         view = ChallengeVerificationPersistentView(self, challenge_url=url)
+        content = f"<@&{role_id}>" if role_id else None
         try:
-            msg = await channel.send(embed=embed, view=view)
+            msg = await channel.send(
+                content=content,
+                embed=embed,
+                view=view,
+                allowed_mentions=discord.AllowedMentions(roles=True),
+            )
         except Exception as exc:
             return f"Failed to send announcement message: {exc}", None
 
@@ -892,8 +1053,17 @@ class ChallengesCog(commands.Cog):
             except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
                 logging.info("Previous writeup announcement cleanup handled: %s", exc)
 
-        # 2. Publish writeup
-        embed = build_writeup_embed(challenge["name"], description_text)
+        # 2. Publish writeup with leaderboard and category
+        winners = active_data.get("winners", [])
+        total_solvers = active_data.get("total_solvers", len(winners))
+        category = challenge.get("category", "General")
+        embed = build_writeup_embed(
+            challenge["name"],
+            description_text,
+            winners=winners,
+            category=category,
+            total_solvers=total_solvers,
+        )
         try:
             if file_to_send:
                 msg = await channel.send(embed=embed, file=file_to_send)
@@ -942,9 +1112,14 @@ class ChallengesCog(commands.Cog):
         b2 = f"<@{winner_map[2]}>" if 2 in winner_map else "Available"
         b3 = f"<@{winner_map[3]}>" if 3 in winner_map else "Available"
 
+        cat_str = ch.get("category", "General")
         embed.add_field(
             name="Active Challenge",
-            value=f"**{ch['name']}**\n[Challenge Link]({ch['url']})",
+            value=(
+                f"**Name:** {ch['name']}\n"
+                f"**Category:** `{cat_str}`\n"
+                f"[Challenge Link]({ch['url']})"
+            ),
             inline=False,
         )
         embed.add_field(
@@ -976,8 +1151,33 @@ class ChallengesCog(commands.Cog):
 
     @challenge_admin.command(name="set", description="Admin: Set and publish a new CTF challenge")
     @app_commands.checks.has_permissions(administrator=True)
-    async def set_cmd(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(SetChallengeModal(self))
+    @app_commands.choices(
+        category=[
+            app_commands.Choice(name="General", value="General"),
+            app_commands.Choice(name="Web Exploitation", value="Web"),
+            app_commands.Choice(name="Cryptography", value="Crypto"),
+            app_commands.Choice(name="Reverse Engineering", value="Reverse Engineering"),
+            app_commands.Choice(name="Forensics", value="Forensics"),
+            app_commands.Choice(name="Binary Exploitation / Pwn", value="Pwn"),
+            app_commands.Choice(name="OSINT", value="OSINT"),
+            app_commands.Choice(name="Miscellaneous", value="Misc"),
+        ]
+    )
+    @app_commands.describe(
+        category="Optional: Challenge category selection",
+        ping_role="Optional: Role to ping/tag upon challenge publication",
+    )
+    async def set_cmd(
+        self,
+        interaction: discord.Interaction,
+        category: app_commands.Choice[str] | None = None,
+        ping_role: discord.Role | None = None,
+    ):
+        cat_val = category.value if category else None
+        role_val = str(ping_role.id) if ping_role else None
+        await interaction.response.send_modal(
+            SetChallengeModal(self, default_category=cat_val, default_role_id=role_val)
+        )
 
     @challenge_admin.command(
         name="writeup",

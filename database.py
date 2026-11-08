@@ -345,6 +345,8 @@ class Challenge(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     guild_id = Column(String, nullable=False, index=True)
     name = Column(String, nullable=False)
+    category = Column(String, nullable=True, default="General")
+    role_id = Column(String, nullable=True)
     url = Column(String, nullable=False)
     flag_hash = Column(String(64), nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
@@ -589,6 +591,14 @@ def ensure_database_columns():
     if "challenges_channel" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guild_config ADD COLUMN challenges_channel VARCHAR"))
+    if "challenges" in inspector.get_table_names():
+        challenge_columns = {column["name"] for column in inspector.get_columns("challenges")}
+        if "category" not in challenge_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE challenges ADD COLUMN category VARCHAR DEFAULT 'General'"))
+        if "role_id" not in challenge_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE challenges ADD COLUMN role_id VARCHAR"))
     # ``users`` is a legacy table and is deliberately absent on fresh
     # multi-guild installations, which use ``guild_users`` from the start.
     if "users" in inspector.get_table_names():

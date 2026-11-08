@@ -511,3 +511,174 @@ def test_disabled_challenges_rejects_verification():
     res = _solve_flag_worker(guild_id, 9999, "any_flag")
     assert res["status"] == "disabled"
     _cleanup_guild(guild_id)
+
+
+# ---------------------------------------------------------------------------
+# Phase 10 Tests: Category, Role Ping, and Writeup Leaderboard Sharing
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_challenge_category_and_role_ping():
+    guild_id = "998001"
+    channel_id = 987654322
+    role_id = 1122334455
+    _cleanup_guild(guild_id)
+
+    _enable_feature_worker(guild_id, "challenges", channel_id)
+
+    bot = MagicMock()
+    cog = ChallengesCog(bot)
+
+    mock_channel = MagicMock(spec=discord.TextChannel)
+    mock_channel.id = channel_id
+    mock_channel.mention = f"<#{channel_id}>"
+    mock_channel.permissions_for = MagicMock(
+        return_value=SimpleNamespace(view_channel=True, send_messages=True)
+    )
+
+    sent_message = MagicMock(spec=discord.Message, id=777888999)
+    mock_channel.send = AsyncMock(return_value=sent_message)
+
+    mock_role = MagicMock(spec=discord.Role, id=role_id)
+    mock_role.mention = f"<@&{role_id}>"
+
+    mock_guild = MagicMock(spec=discord.Guild)
+    mock_guild.id = int(guild_id)
+    mock_guild.me = MagicMock()
+    mock_guild.get_channel = MagicMock(return_value=mock_channel)
+    mock_guild.get_role = MagicMock(return_value=mock_role)
+
+    flag_hash = hashlib.sha256(b"pwn_the_world").hexdigest()
+
+    err, ch_mention = await cog.publish_new_challenge(
+        mock_guild,
+        name="BufferBuster",
+        url="https://ctf.rynex.com/pwn1",
+        flag_hash=flag_hash,
+        category="Pwn",
+        role_id=role_id,
+    )
+    assert err is None
+    assert ch_mention == mock_channel.mention
+
+    # Verify announcement message was sent with role tag in content and role allowed_mentions
+    mock_channel.send.assert_awaited_once()
+    kwargs = mock_channel.send.call_args.kwargs
+    assert kwargs.get("content") == f"<@&{role_id}>"
+    assert kwargs.get("allowed_mentions") is not None
+    assert kwargs["allowed_mentions"].roles is True
+
+    # Verify category is in embed description
+    embed = kwargs["embed"]
+    assert "**Category:** `Pwn`" in embed.description
+    assert "**Challenge:** BufferBuster" in embed.description
+
+    # Verify stored in DB
+    active = _get_active_challenge_worker(guild_id)
+    assert active is not None
+    assert active["challenge"]["name"] == "BufferBuster"
+    assert active["challenge"]["category"] == "Pwn"
+    assert active["challenge"]["role_id"] == str(role_id)
+
+    _cleanup_guild(guild_id)
+
+
+@pytest.mark.asyncio
+async def test_writeup_shares_challenge_leaderboard():
+    guild_id = "998002"
+    channel_id = 987654323
+    _cleanup_guild(guild_id)
+
+    _enable_feature_worker(guild_id, "challenges", channel_id)
+
+    bot = MagicMock()
+    cog = ChallengesCog(bot)
+
+    mock_channel = MagicMock(spec=discord.TextChannel)
+    mock_channel.id = channel_id
+    mock_channel.mention = f"<#{channel_id}>"
+    mock_channel.permissions_for = MagicMock(
+        return_value=SimpleNamespace(view_channel=True, send_messages=True)
+    )
+
+    sent_msg = MagicMock(spec=discord.Message, id=888001)
+    mock_channel.send = AsyncMock(return_value=sent_msg)
+
+    mock_guild = MagicMock(spec=discord.Guild)
+    mock_guild.id = int(guild_id)
+    mock_guild.me = MagicMock()
+    mock_guild.get_channel = MagicMock(return_value=mock_channel)
+
+    flag = "CTF{web_sec_hero_2026}"
+    flag_hash = hashlib.sha256(flag.encode("utf-8")).hexdigest()
+
+    # Create challenge with Web category
+    ch = _create_challenge_worker(
+        guild_id, "InjectionZero", "https://ctf.rynex.com/web1", flag_hash, category="Web"
+    )
+    _record_announcement_message_worker(ch["id"], guild_id, str(channel_id), "777001")
+
+    # User 3001 claims First Blood, User 3002 claims Second Blood
+    res1 = _solve_flag_worker(guild_id, 3001, flag)
+    assert res1["status"] == "success"
+    assert res1["rank"] == 1
+
+    res2 = _solve_flag_worker(guild_id, 3002, flag)
+    assert res2["status"] == "success"
+    assert res2["rank"] == 2
+
+    # Publish writeup
+    err, ch_mention = await cog.publish_writeup(
+        mock_guild, content="# Official Solution\nExploit parameter `query` via blind boolean SQLi."
+    )
+    assert err is None
+    assert ch_mention == mock_channel.mention
+
+    # Verify writeup embed contains the leaderboard
+    mock_channel.send.assert_awaited_once()
+    kwargs = mock_channel.send.call_args.kwargs
+    writeup_embed = kwargs["embed"]
+
+    assert "Challenge Writeup: InjectionZero" in writeup_embed.title
+    # Check category field
+    cat_fields = [f for f in writeup_embed.fields if f.name == "Category"]
+    assert len(cat_fields) == 1
+    assert cat_fields[0].value == "`Web`"
+
+    # Check leaderboard field
+    lb_fields = [f for f in writeup_embed.fields if "Leaderboard" in f.name]
+    assert len(lb_fields) == 1
+    lb_val = lb_fields[0].value
+    assert "<@3001>" in lb_val
+    assert "<@3002>" in lb_val
+    assert "First Blood" in lb_val
+    assert "Second Blood" in lb_val
+    assert "Third Blood" in lb_val
+    assert "Available" in lb_val
+
+    _cleanup_guild(guild_id)
+
+
+def test_category_select_dropdown_in_admin_view():
+    from cogs.challenges import CategorySelect
+
+    bot = MagicMock()
+    cog = ChallengesCog(bot)
+    view = ChallengesAdminView(cog)
+
+    assert view.selected_category == "General"
+
+    # Find the CategorySelect item in the view
+    selects = [item for item in view.children if isinstance(item, CategorySelect)]
+    assert len(selects) == 1
+    sel = selects[0]
+
+    # Verify options contain CTF categories
+    labels = [opt.label for opt in sel.options]
+    assert "General" in labels
+    assert "Web" in labels
+    assert "Crypto" in labels
+    assert "Reverse Engineering" in labels
+    assert "Pwn" in labels
+    assert "Forensics"
+
