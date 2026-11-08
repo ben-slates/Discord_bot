@@ -71,15 +71,19 @@ class NotificationsCog(commands.Cog):
 
     async def _run_daily_summary(self, now: datetime.datetime):
         current_time_str = now.strftime("%H:%M")
+        is_morning = (now.hour == 8 or current_time_str == "08:00")
+        is_night = (now.hour == 23 or current_time_str == "23:50")
+
         # Load configs in a thread to avoid blocking the event loop
         configs = await run_db(_fetch_all_configs)
         for config in configs:
+            try:
                 guild = self.bot.get_guild(int(config.guild_id))
                 if not guild:
                     continue
                 
                 # Morning Leaderboard at 08:00
-                if current_time_str == "08:00" and config.leaderboard_enabled:
+                if is_morning and config.leaderboard_enabled:
                     leaderboard_channel_id = get_leaderboard_channel_id(config)
                     if leaderboard_channel_id:
                         channel = guild.get_channel(int(leaderboard_channel_id))
@@ -100,7 +104,7 @@ class NotificationsCog(commands.Cog):
                                         await msg.delete()
                                         break
                         except Exception as delete_err:
-                            print(f"Failed to delete old leaderboard: {delete_err}")
+                            logging.warning("Failed to delete old leaderboard: %s", delete_err)
 
                         logging.info("Generating leaderboard for guild %s", guild.id)
                         embed = discord.Embed(title="Morning Leaderboard Update", description="Top 5 users by total XP.", color=discord.Color.gold())
@@ -145,7 +149,7 @@ class NotificationsCog(commands.Cog):
                         )
 
                 # Quote of the Day at the same fixed 08:00 Asia/Karachi run (sent every 3 days).
-                if current_time_str == "08:00" and config.quote_of_day_enabled and config.quote_of_day_channel:
+                if is_morning and config.quote_of_day_enabled and config.quote_of_day_channel:
                     channel = guild.get_channel(int(config.quote_of_day_channel))
                     if isinstance(channel, discord.TextChannel):
                         should_send = False
@@ -172,7 +176,7 @@ class NotificationsCog(commands.Cog):
                                 await run_db(_set_last_quote, config.guild_id, quote, today_date.isoformat())
 
                 # Clean Server daily check at 08:00 (removes members inactive for 1 month / 30+ days).
-                if current_time_str == "08:00" and getattr(config, "clean_server_enabled", False):
+                if is_morning and getattr(config, "clean_server_enabled", False):
                     today_str = now.strftime('%Y-%m-%d')
                     if getattr(config, "clean_server_last_run", None) != today_str:
                         try:
@@ -181,7 +185,7 @@ class NotificationsCog(commands.Cog):
                             logging.exception("Clean server routine failed for guild %s", guild.id)
                 
                 # Nightly Attendance at 23:50
-                if current_time_str == "23:50" and config.attendance_enabled and config.attendance_channel:
+                if is_night and config.attendance_enabled and config.attendance_channel:
                     channel = guild.get_channel(int(config.attendance_channel))
                     if channel:
                         today = now.strftime('%Y-%m-%d')
@@ -214,7 +218,7 @@ class NotificationsCog(commands.Cog):
                             logging.exception("Failed to replace nightly attendance log in channel %s", channel.id)
                 
                 # Custom Leaderboards at 08:00
-                if current_time_str == "08:00":
+                if is_morning and config.leaderboard_enabled:
                     custom_lbs = await run_db(_fetch_custom_lbs, config.guild_id)
                     for lb in custom_lbs:
                         channel = guild.get_channel(int(lb.channel_id))
@@ -228,7 +232,7 @@ class NotificationsCog(commands.Cog):
                                         await msg.delete()
                                         break
                         except Exception as delete_err:
-                            print(f"Failed to delete old custom leaderboard in {lb.channel_id}: {delete_err}")
+                            logging.warning("Failed to delete old custom leaderboard in %s: %s", lb.channel_id, delete_err)
                         
                         scores = []
                         all_users = await run_db(_fetch_all_users, config.guild_id)
@@ -269,8 +273,10 @@ class NotificationsCog(commands.Cog):
                                 )
                         try:
                             await channel.send(embed=embed)
-                        except discord.Forbidden:
+                        except (discord.Forbidden, discord.HTTPException):
                             pass
+            except Exception as guild_err:
+                logging.exception("Failed daily summary processing for guild %s: %s", getattr(config, "guild_id", "unknown"), guild_err)
         # end of configs loop
 
     @daily_summary.before_loop
