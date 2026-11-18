@@ -630,18 +630,6 @@ class CategorySelect(discord.ui.Select):
         await interaction.response.edit_message(view=self.view)
 
 
-ALLOWED_DIFFICULTIES = ("Very Easy", "Easy", "Medium", "Hard", "Insane")
-DIFF_MAP = {
-    "very easy": "Very Easy",
-    "veryeasy": "Very Easy",
-    "easy": "Easy",
-    "medium": "Medium",
-    "med": "Medium",
-    "hard": "Hard",
-    "insane": "Insane",
-}
-
-
 class DifficultySelect(discord.ui.Select):
     """Dropdown menu for selecting challenge difficulty."""
 
@@ -687,12 +675,17 @@ class SetChallengeModal(discord.ui.Modal, title="Set CTF Challenge"):
             required=True,
             max_length=100,
         )
-        self.difficulty = discord.ui.TextInput(
-            label="Difficulty (Very Easy/Easy/Medium/Hard/Insane)",
-            placeholder="Very Easy, Easy, Medium, Hard, or Insane",
-            default=self.default_difficulty,
-            required=False,
-            max_length=20,
+        self.difficulty = discord.ui.Select(
+            placeholder="Select Difficulty...",
+            min_values=1,
+            max_values=1,
+            options=[
+                discord.SelectOption(label="Very Easy", value="Very Easy", emoji="🟢", default=(self.default_difficulty == "Very Easy")),
+                discord.SelectOption(label="Easy", value="Easy", emoji="🟢", default=(self.default_difficulty == "Easy")),
+                discord.SelectOption(label="Medium", value="Medium", emoji="🟡", default=(self.default_difficulty == "Medium")),
+                discord.SelectOption(label="Hard", value="Hard", emoji="🔴", default=(self.default_difficulty == "Hard")),
+                discord.SelectOption(label="Insane", value="Insane", emoji="💀", default=(self.default_difficulty == "Insane")),
+            ],
         )
         self.url = discord.ui.TextInput(
             label="Challenge ZIP URL",
@@ -723,18 +716,11 @@ class SetChallengeModal(discord.ui.Modal, title="Set CTF Challenge"):
         await interaction.response.defer(ephemeral=True)
 
         name = (self.name.value or "").strip()
-        raw_diff = (self.difficulty.value or "").strip().lower()
-        if raw_diff:
-            if raw_diff not in DIFF_MAP:
-                await interaction.followup.send(
-                    "❌ Invalid difficulty. Please enter one of: `Very Easy`, `Easy`, `Medium`, `Hard`, `Insane`.",
-                    ephemeral=True,
-                )
-                return
-            diff_val = DIFF_MAP[raw_diff]
-        else:
-            diff_val = self.default_difficulty
-
+        diff_val = (
+            self.difficulty.values[0]
+            if (hasattr(self.difficulty, "values") and self.difficulty.values)
+            else self.default_difficulty
+        )
         url = (self.url.value or "").strip()
         flag = (self.flag.value or "").strip()
         role_raw = (self.role.value or "").strip()
