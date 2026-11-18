@@ -687,7 +687,7 @@ def test_category_select_dropdown_in_admin_view():
 
 
 def test_difficulty_select_dropdown_in_admin_view_and_modal():
-    from cogs.challenges import DifficultySelect, SetChallengeModal
+    from cogs.challenges import DifficultySelect, SetChallengeModal, DIFF_MAP
 
     bot = MagicMock()
     cog = ChallengesCog(bot)
@@ -695,7 +695,7 @@ def test_difficulty_select_dropdown_in_admin_view_and_modal():
 
     assert view.selected_difficulty == "Medium"
 
-    # Verify DifficultySelect in admin view
+    # Verify DifficultySelect dropdown in interactive admin view
     diff_selects = [item for item in view.children if isinstance(item, DifficultySelect)]
     assert len(diff_selects) == 1
     diff_sel = diff_selects[0]
@@ -705,22 +705,29 @@ def test_difficulty_select_dropdown_in_admin_view_and_modal():
     for exp in expected_difficulties:
         assert exp in sel_labels
 
-    # Verify SetChallengeModal has difficulty as a dropdown (Select), not a text input
+    # Verify SetChallengeModal components: Discord API strictly requires ALL modal components
+    # to be TextInput (type 4). Select menus in modals cause HTTP 400 Bad Request error 50035.
     modal = SetChallengeModal(cog, default_difficulty="Hard", default_role_id="987654321")
-    assert isinstance(modal.difficulty, discord.ui.Select)
-
-    modal_diff_labels = [opt.label for opt in modal.difficulty.options]
-    for exp in expected_difficulties:
-        assert exp in modal_diff_labels
-
-    # Verify default selection is respected
-    hard_opts = [opt for opt in modal.difficulty.options if opt.label == "Hard"]
-    assert len(hard_opts) == 1
-    assert hard_opts[0].default is True
-
-    # Verify role UID field exists and accepts UID
+    assert isinstance(modal.name, discord.ui.TextInput)
+    assert isinstance(modal.difficulty, discord.ui.TextInput)
+    assert isinstance(modal.url, discord.ui.TextInput)
+    assert isinstance(modal.flag, discord.ui.TextInput)
     assert isinstance(modal.role, discord.ui.TextInput)
+
+    # Total modal components must be <= 5 (Discord API limit)
+    assert len(modal.children) == 5
+    for child in modal.children:
+        assert isinstance(child, discord.ui.TextInput)
+
+    # Verify default difficulty is pre-filled from dropdown selection
+    assert modal.difficulty.default == "Hard"
     assert modal.role.default == "987654321"
-    assert "UID" in modal.role.label
+
+    # Verify normalization map works properly
+    assert DIFF_MAP["very easy"] == "Very Easy"
+    assert DIFF_MAP["easy"] == "Easy"
+    assert DIFF_MAP["medium"] == "Medium"
+    assert DIFF_MAP["hard"] == "Hard"
+    assert DIFF_MAP["insane"] == "Insane"
 
 

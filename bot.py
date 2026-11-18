@@ -195,6 +195,10 @@ class RynexBot(commands.Bot):
                 logging.exception("Failed while running enhanced event-loop diagnostics")
 
     async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        # Always log full exception to console / systemd journal for diagnostics
+        cmd_name = interaction.command.name if interaction.command else "unknown"
+        logging.exception("App command error on /%s by %s (%s): %s", cmd_name, interaction.user, getattr(interaction.user, "id", None), error)
+
         # Friendly handling for common app-command errors while still logging full tracebacks
         # Map common error class names to user-friendly messages
         friendly_by_name = {
