@@ -346,6 +346,7 @@ class Challenge(Base):
     guild_id = Column(String, nullable=False, index=True)
     name = Column(String, nullable=False)
     category = Column(String, nullable=True, default="General")
+    difficulty = Column(String, nullable=True, default="Medium")
     role_id = Column(String, nullable=True)
     url = Column(String, nullable=False)
     flag_hash = Column(String(64), nullable=False)
@@ -596,6 +597,9 @@ def ensure_database_columns():
         if "category" not in challenge_columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE challenges ADD COLUMN category VARCHAR DEFAULT 'General'"))
+        if "difficulty" not in challenge_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE challenges ADD COLUMN difficulty VARCHAR DEFAULT 'Medium'"))
         if "role_id" not in challenge_columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE challenges ADD COLUMN role_id VARCHAR"))

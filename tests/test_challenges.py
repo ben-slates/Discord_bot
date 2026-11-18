@@ -556,6 +556,7 @@ async def test_challenge_category_and_role_ping():
         url="https://ctf.rynex.com/pwn1",
         flag_hash=flag_hash,
         category="Pwn",
+        difficulty="Insane",
         role_id=role_id,
     )
     assert err is None
@@ -568,9 +569,10 @@ async def test_challenge_category_and_role_ping():
     assert kwargs.get("allowed_mentions") is not None
     assert kwargs["allowed_mentions"].roles is True
 
-    # Verify category is in embed description
+    # Verify category and difficulty are in embed description
     embed = kwargs["embed"]
     assert "**Category:** `Pwn`" in embed.description
+    assert "**Difficulty:** `Insane`" in embed.description
     assert "**Challenge:** BufferBuster" in embed.description
 
     # Verify stored in DB
@@ -578,6 +580,7 @@ async def test_challenge_category_and_role_ping():
     assert active is not None
     assert active["challenge"]["name"] == "BufferBuster"
     assert active["challenge"]["category"] == "Pwn"
+    assert active["challenge"]["difficulty"] == "Insane"
     assert active["challenge"]["role_id"] == str(role_id)
 
     _cleanup_guild(guild_id)
@@ -681,4 +684,43 @@ def test_category_select_dropdown_in_admin_view():
     assert "Reverse Engineering" in labels
     assert "Pwn" in labels
     assert "Forensics"
+
+
+def test_difficulty_select_dropdown_in_admin_view_and_modal():
+    from cogs.challenges import DifficultySelect, SetChallengeModal
+
+    bot = MagicMock()
+    cog = ChallengesCog(bot)
+    view = ChallengesAdminView(cog)
+
+    assert view.selected_difficulty == "Medium"
+
+    # Verify DifficultySelect in admin view
+    diff_selects = [item for item in view.children if isinstance(item, DifficultySelect)]
+    assert len(diff_selects) == 1
+    diff_sel = diff_selects[0]
+
+    expected_difficulties = ["Very Easy", "Easy", "Medium", "Hard", "Insane"]
+    sel_labels = [opt.label for opt in diff_sel.options]
+    for exp in expected_difficulties:
+        assert exp in sel_labels
+
+    # Verify SetChallengeModal has difficulty as a dropdown (Select), not a text input
+    modal = SetChallengeModal(cog, default_difficulty="Hard", default_role_id="987654321")
+    assert isinstance(modal.difficulty, discord.ui.Select)
+
+    modal_diff_labels = [opt.label for opt in modal.difficulty.options]
+    for exp in expected_difficulties:
+        assert exp in modal_diff_labels
+
+    # Verify default selection is respected
+    hard_opts = [opt for opt in modal.difficulty.options if opt.label == "Hard"]
+    assert len(hard_opts) == 1
+    assert hard_opts[0].default is True
+
+    # Verify role UID field exists and accepts UID
+    assert isinstance(modal.role, discord.ui.TextInput)
+    assert modal.role.default == "987654321"
+    assert "UID" in modal.role.label
+
 
