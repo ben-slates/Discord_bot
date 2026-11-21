@@ -821,6 +821,24 @@ async def test_solvers_slash_commands_and_panel_button():
     sent_embed = interaction.followup.send.call_args[1]["embed"]
     assert "<@777888>" in sent_embed.description
     assert "**1** solve" in sent_embed.description
+    # Ensure view is not passed as None (prevents discord.py TypeError)
+    assert "view" not in interaction.followup.send.call_args[1]
+
+    # Test ctf_solvers_cmd callback
+    interaction.reset_mock()
+    interaction.response.is_done.return_value = False
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
+    await cog.ctf_solvers_cmd.callback(cog, interaction, ephemeral=False)
+    assert "view" not in interaction.followup.send.call_args[1]
+
+    # Test admin_solvers_cmd callback
+    interaction.reset_mock()
+    interaction.response.is_done.return_value = False
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
+    await cog.admin_solvers_cmd.callback(cog, interaction)
+    assert "view" not in interaction.followup.send.call_args[1]
 
     _cleanup_guild(guild_id)
 

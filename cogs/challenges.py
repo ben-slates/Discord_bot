@@ -1439,19 +1439,17 @@ class ChallengesCog(commands.Cog):
             page=1,
             per_page=10,
         )
-        view = (
-            SolversPaginationView(
+        kwargs = {"embed": embed, "ephemeral": ephemeral}
+        if len(solvers) > 10:
+            kwargs["view"] = SolversPaginationView(
                 interaction.guild.name,
                 total_challenges,
                 solvers,
                 current_page=1,
                 per_page=10,
             )
-            if len(solvers) > 10
-            else None
-        )
 
-        await interaction.followup.send(embed=embed, view=view, ephemeral=ephemeral)
+        await interaction.followup.send(**kwargs)
 
     # -----------------------------------------------------------------------
     # Public Application Commands
