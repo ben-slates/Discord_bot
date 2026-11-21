@@ -38,18 +38,171 @@ Watch the 18-second launch video: [`brag/brag.mp4`](brag/brag.mp4)
 
 ## Architecture
 
-```
-Discord Gateway / slash commands  
-        │ async  
-        ├── cogs: feature and task orchestration  
-        ├── aiohttp: reusable RSS HTTP session (News)  
-        ├── Google GenAI async client (Support)  
-        └── DB executor (six bounded workers)  
-                 └── synchronous SQLAlchemy session per operation  
-                         └── SQLite or PostgreSQL
+```mermaid
+flowchart TD
+    subgraph Discord["Discord Platform"]
+        Users["Discord Users & Admins"]
+        Gateway["Discord Gateway (WebSockets)"]
+        REST["Discord REST API"]
+    end
+
+    subgraph BotCore["Rynex Bot Core (bot.py)"]
+        Client["RynexBot (discord.Client)"]
+        Tree["AppCommand Tree"]
+        Watchdog["Event Loop Watchdog & Diag"]
+    end
+
+    subgraph FeatureCogs["Feature Modules (Cogs)"]
+        Challenges["ChallengesCog (CTF System)"]
+        Leveling["LevelingCog (XP & Cards)"]
+        Attendance["AttendanceCog (Check-in & Stats)"]
+        Support["SupportCog (AI Ticket Desk)"]
+        News["NewsCog (CVE & HackerNews)"]
+        Notifications["NotificationsCog (Scheduled Routines)"]
+        CustomLB["CustomLBCog (/setting & Hall of Fame)"]
+        Welcome["WelcomeCog & Verification"]
+        AdminCog["AdminCog (Moderation & /message)"]
+    end
+
+    subgraph ExternalServices["External APIs & Async Services"]
+        Gemini["Google Gemini AI API"]
+        RSS["RSS Feeds (The Hacker News, CVEs)"]
+        Pillow["Pillow Image Renderer (Rank/Welcome Cards)"]
+    end
+
+    subgraph DataLayer["Non-Blocking Persistence Layer"]
+        Executor["Bounded DB Executor (6 Worker Threads)"]
+        ORM["SQLAlchemy ORM (Session per worker)"]
+        Database[("PostgreSQL / SQLite Database")]
+    end
+
+    Users -->|Interactions, Messages, Voice| Gateway
+    Gateway --> Client
+    Client --> Tree
+    Tree --> FeatureCogs
+
+    Support -.->|Async Prompt/Reply| Gemini
+    News -.->|aiohttp RSS Poll| RSS
+    Leveling -.->|Off-thread Draw| Pillow
+    Welcome -.->|Off-thread Draw| Pillow
+
+    FeatureCogs -->|run_db(worker)| Executor
+    Executor --> ORM
+    ORM --> Database
+
+    FeatureCogs -->|Send Messages, Embeds, Modals| REST
+    REST --> Users
 ```
 
 Each DB worker operation owns its `SessionLocal()` session and closes it before returning. Sessions are never shared across asyncio tasks or threads. Card rendering and RSS parsing are also kept out of the event-loop thread.
+
+## 🗺️ Complete Bot Functions & Command Map
+
+```mermaid
+flowchart LR
+    Bot(["🤖 Rynex Technologies Bot"])
+
+    subgraph CTF["🛡️ CTF Challenges System"]
+        Bot --> CTF
+        C1["/challenge-solvers"]
+        C2["/ctf-solvers"]
+        C3["/challenge-admin panel"]
+        C4["/challenge-admin set"]
+        C5["/challenge-admin writeup"]
+        C6["/challenge-admin status"]
+        C7["/challenge-admin solvers"]
+        C8["Verify Flag Button (Persistent)"]
+        C9["Download ZIP Button"]
+    end
+
+    subgraph LevelingSys["📈 Gamification & Leveling"]
+        Bot --> LevelingSys
+        L1["/rank"]
+        L2["/leaderboard"]
+        L3["/rankcard"]
+        L4["Message XP (Daily Capped)"]
+        L5["Voice XP (2+ Users Minutely)"]
+        L6["Pillow Level-up Cards"]
+    end
+
+    subgraph Attend["📅 Attendance & Time Tracking"]
+        Bot --> Attend
+        A1["/today"]
+        A2["/user"]
+        A3["/month"]
+        A4["/stats"]
+        A5["/export (CSV)"]
+        A6["/activity"]
+        A7["/setting-attendance"]
+    end
+
+    subgraph SuppDesk["🎫 AI Support Desk"]
+        Bot --> SuppDesk
+        S1["/ticket"]
+        S2["/question"]
+        S3["/adduser & /removeuser"]
+        S4["/close & /reopen"]
+        S5["/transcript (Export)"]
+        S6["/closeall"]
+        S7["Gemini AI Auto-Reply"]
+        S8["Mark Resolved / Human Escalation"]
+    end
+
+    subgraph ConfigAdmin["⚙️ Admin & Server Settings"]
+        Bot --> ConfigAdmin
+        M1["/setting (Interactive GUI Panel)"]
+        M2["/enable & /disable"]
+        M3["/test (Feature Testing)"]
+        M4["/message (Modal Broadcast)"]
+        M5["/set_leaderboard"]
+        M6["/add_custom_leaderboard"]
+        M7["/remove_custom_leaderboard"]
+        M8["/hall_of_fame & /hall_of_fame_overall"]
+    end
+
+    subgraph Automations["⏰ Scheduled Automations"]
+        Bot --> Automations
+        T1["08:00 PKT: Morning Leaderboard"]
+        T2["08:00 PKT: Quote of the Day (3-Day)"]
+        T3["08:00 PKT: Clean Server Inactive Audit"]
+        T4["Every 30m: CVE & Tech News Broadcast"]
+        T5["Every 30m: Inactive Closed Ticket Sweep"]
+        T6["23:50 PKT: Daily Attendance Summary"]
+    end
+```
+
+### 🛡️ CTF Challenge Lifecycle & Verification Flow
+
+```mermaid
+flowchart TD
+    Admin(["👑 Administrator"]) -->|/challenge-admin set or panel| Modal["Set Challenge Modal"]
+    Modal -->|Name, ZIP URL, Flag, Category, Role| Validate{"Validate & SHA-256 Hash"}
+    Validate -->|Store Challenge| DB[("Database")]
+    Validate -->|Publish Announcement| Channel["📢 Announcement Channel"]
+
+    Channel --> Announce["Public Announcement Embed\n- Category & Password Box\n- Real-time Leaderboard\n- Download ZIP & Verify Buttons"]
+
+    User(["🧑💻 Server Member"]) -->|Clicks 'Verify Flag'| VerifyModal["Enter Flag Modal"]
+    VerifyModal -->|Constant-time Hash Compare| Check{"Is Flag Correct?"}
+
+    Check -->|No| Incorrect["Private Ephemeral: ❌ Incorrect Flag"]
+    Check -->|Yes| SolveCheck{"Already Solved?"}
+    SolveCheck -->|Yes| Already["Private Ephemeral: Already Solved"]
+    SolveCheck -->|No| RankAssign{"Available Rank?"}
+
+    RankAssign -->|Rank 1: First Blood| FB["Award 110 XP (50+60)\nUpdate Leaderboard: 🥇 User"]
+    RankAssign -->|Rank 2: Second Blood| SB["Award 80 XP (50+30)\nUpdate Leaderboard: 🥈 User"]
+    RankAssign -->|Rank 3: Third Blood| TB["Award 65 XP (50+15)\nUpdate Leaderboard: 🥉 User"]
+    RankAssign -->|Rank 4+: Solver| Sub["Award 50 XP\nAcknowledge solve privately"]
+
+    FB --> UpdateXP["Update UserData (Total Server XP & Level)"]
+    SB --> UpdateXP
+    TB --> UpdateXP
+    Sub --> UpdateXP
+
+    Admin -->|/challenge-admin writeup| Writeup["Publish Official Writeup (.md file or text)"]
+    Writeup --> Channel
+```
 
 ## Requirements
 
@@ -151,10 +304,13 @@ Use `/enable` and `/disable` as an administrator to configure per-guild features
 | `/reopen` | none | Manage Messages; reopens a closed ticket. |
 | `/transcript` | none | Manage Messages; exports up to 500 ticket messages. |
 | `/closeall` | none | Administrator; closes all open tickets in the configured category. |
-| `/challenge-admin panel` | none | Administrator. Opens the Challenges management panel (Set Challenge, Send Writeup, Status). |
-| `/challenge-admin set` | none | Administrator. Opens the modal to publish a new challenge (Name, URL, Flag). |
+| `/challenge-admin panel` | none | Administrator. Opens the interactive Challenges management panel (Set Challenge, Send Writeup, Status, All Solvers, Category select). |
+| `/challenge-admin set` | optional `category`, optional `ping_role` | Administrator. Opens the modal to publish a new challenge (Name, URL, Flag, Category, Role UID). |
 | `/challenge-admin writeup` | optional `content`, optional `file` | Administrator. Publishes an official Markdown writeup (as text or `.md` file attachment). |
 | `/challenge-admin status` | none | Administrator. Displays active challenge and leaderboard status. |
+| `/challenge-admin solvers` | none | Administrator. Displays CTF solver standings and solve statistics ephemerally. |
+| `/challenge-solvers` | optional `ephemeral` | Public. Displays the CTF solvers leaderboard with solve counts and First Blood badges (interactive pagination). |
+| `/ctf-solvers` | optional `ephemeral` | Public. Alias for `/challenge-solvers`. |
 
 
 Ticket AI responses include **Mark as Resolved** and **Talk to Human / Unsatisfied** persistent buttons. The latter stops AI replies for that ticket and alerts an administrator-named role when available.
