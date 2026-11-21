@@ -35,8 +35,11 @@ from cogs.challenges import (
     _get_latest_publication_worker,
     _get_active_challenge_worker,
     _solve_flag_worker,
+    _get_challenge_solvers_worker,
     build_challenge_embed,
     build_writeup_embed,
+    build_solvers_embed,
+    SolversPaginationView,
 )
 
 
@@ -681,4 +684,143 @@ def test_category_select_dropdown_in_admin_view():
     assert "Reverse Engineering" in labels
     assert "Pwn" in labels
     assert "Forensics"
+
+
+def test_get_challenge_solvers_worker():
+    guild_id = "test_solvers_guild_1"
+    _cleanup_guild(guild_id)
+
+    # Enable challenges
+    _enable_feature_worker(guild_id, "challenges", "999888777")
+
+    # Create 2 challenges
+    flag1_hash = hashlib.sha256("flag{test1}".encode("utf-8")).hexdigest()
+    ch1 = _create_challenge_worker(guild_id, "CTF One", "https://example.com/1.zip", flag1_hash, category="Web")
+
+    flag2_hash = hashlib.sha256("flag{test2}".encode("utf-8")).hexdigest()
+    ch2 = _create_challenge_worker(guild_id, "CTF Two", "https://example.com/2.zip", flag2_hash, category="Crypto")
+
+    # User 100 solves both CTF 1 (rank 1) and CTF 2 (rank 2)
+    # User 200 solves CTF 1 (rank 2)
+    # User 300 solves CTF 2 (rank 1)
+    db = SessionLocal()
+    try:
+        w1 = ChallengeWinner(challenge_id=ch1["id"], discord_user_id=100, rank=1, solved_at=datetime.datetime.now(datetime.timezone.utc))
+        w2 = ChallengeWinner(challenge_id=ch1["id"], discord_user_id=200, rank=2, solved_at=datetime.datetime.now(datetime.timezone.utc))
+        w3 = ChallengeWinner(challenge_id=ch2["id"], discord_user_id=300, rank=1, solved_at=datetime.datetime.now(datetime.timezone.utc))
+        w4 = ChallengeWinner(challenge_id=ch2["id"], discord_user_id=100, rank=2, solved_at=datetime.datetime.now(datetime.timezone.utc))
+        db.add_all([w1, w2, w3, w4])
+        db.commit()
+    finally:
+        db.close()
+
+    data = _get_challenge_solvers_worker(guild_id)
+    assert data["total_challenges"] == 2
+    assert data["total_solvers"] == 3
+
+    solvers = data["solvers"]
+    # User 100 has 2 solves, rank 1
+    assert solvers[0]["user_id"] == 100
+    assert solvers[0]["solve_count"] == 2
+    assert solvers[0]["first_bloods"] == 1
+    assert solvers[0]["second_bloods"] == 1
+
+    # User 300 has 1 solve with 1 first blood, ranked above User 200 (1 solve, 0 first blood)
+    assert solvers[1]["user_id"] == 300
+    assert solvers[1]["solve_count"] == 1
+    assert solvers[1]["first_bloods"] == 1
+
+    assert solvers[2]["user_id"] == 200
+    assert solvers[2]["solve_count"] == 1
+    assert solvers[2]["first_bloods"] == 0
+    assert solvers[2]["second_bloods"] == 1
+
+    _cleanup_guild(guild_id)
+
+
+def test_build_solvers_embed_and_pagination():
+    # 1. Empty solvers
+    empty_embed = build_solvers_embed("Test Server", 5, [])
+    assert "No members have solved any CTF challenges yet" in empty_embed.description
+    assert "**Total Challenges:** `5`" in empty_embed.description
+
+    # 2. Solvers list (15 users to test pagination)
+    solvers = [
+        {"user_id": 1000 + i, "solve_count": 20 - i, "first_bloods": 1 if i == 0 else 0, "second_bloods": 0, "third_bloods": 0}
+        for i in range(15)
+    ]
+
+    embed_page1 = build_solvers_embed("Test Server", 10, solvers, page=1, per_page=10)
+    assert "Total Solvers:** `15`" in embed_page1.description
+    assert "<@1000>" in embed_page1.description
+    assert "🥇" in embed_page1.description
+    assert "Page 1/2" in embed_page1.footer.text
+
+    embed_page2 = build_solvers_embed("Test Server", 10, solvers, page=2, per_page=10)
+    assert "<@1010>" in embed_page2.description
+    assert "Page 2/2" in embed_page2.footer.text
+
+    # 3. SolversPaginationView
+    view = SolversPaginationView("Test Server", 10, solvers, current_page=1, per_page=10)
+    assert view.prev_btn.disabled is True
+    assert view.next_btn.disabled is False
+    assert view.page_indicator.label == "1 / 2"
+
+
+@pytest.mark.asyncio
+async def test_solvers_slash_commands_and_panel_button():
+    guild_id = "999111222"
+    _cleanup_guild(guild_id)
+
+    bot = MagicMock()
+    cog = ChallengesCog(bot)
+
+    # 1. Check panel button exists
+    view = ChallengesAdminView(cog)
+    all_solvers_btns = [b for b in view.children if getattr(b, "label", None) == "All Solvers"]
+    assert len(all_solvers_btns) == 1
+
+    # 2. When challenges are disabled
+    guild = MagicMock(spec=discord.Guild)
+    guild.id = int(guild_id)
+    guild.name = "Test CTF Server"
+
+    interaction = MagicMock(spec=discord.Interaction)
+    interaction.guild = guild
+    interaction.guild_id = guild.id
+    interaction.response.is_done.return_value = False
+    interaction.response.defer = AsyncMock()
+    interaction.response.send_message = AsyncMock()
+    interaction.followup.send = AsyncMock()
+
+    await cog.send_solvers_leaderboard(interaction)
+    interaction.response.send_message.assert_called_once()
+    assert "disabled" in interaction.response.send_message.call_args[0][0]
+
+    # 3. Enable challenges and populate 1 solve
+    _enable_feature_worker(guild_id, "challenges", "111222333")
+    flag_hash = hashlib.sha256("flag{abc}".encode("utf-8")).hexdigest()
+    ch = _create_challenge_worker(guild_id, "Pwnable", "https://example.com/pwn.zip", flag_hash)
+
+    db = SessionLocal()
+    try:
+        w = ChallengeWinner(challenge_id=ch["id"], discord_user_id=777888, rank=1, solved_at=datetime.datetime.now(datetime.timezone.utc))
+        db.add(w)
+        db.commit()
+    finally:
+        db.close()
+
+    interaction.reset_mock()
+    interaction.response.is_done.return_value = False
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
+
+    await cog.challenge_solvers_cmd.callback(cog, interaction, ephemeral=False)
+    interaction.response.defer.assert_called_once_with(ephemeral=False)
+    interaction.followup.send.assert_called_once()
+    sent_embed = interaction.followup.send.call_args[1]["embed"]
+    assert "<@777888>" in sent_embed.description
+    assert "**1** solve" in sent_embed.description
+
+    _cleanup_guild(guild_id)
 

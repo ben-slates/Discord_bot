@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 import discord
 from discord import app_commands
 from discord.ext import commands
+from sqlalchemy import func, case
 from sqlalchemy.exc import IntegrityError
 
 from database import (
@@ -370,6 +371,57 @@ def _solve_flag_worker(guild_id: str, user_id: int, submitted_flag: str) -> dict
         db.close()
 
 
+def _get_challenge_solvers_worker(guild_id: str) -> dict:
+    """Aggregates all CTF solvers, their total solve count, and podium bloods for a guild."""
+    db = SessionLocal()
+    try:
+        total_challenges = (
+            db.query(func.count(Challenge.id))
+            .filter(Challenge.guild_id == str(guild_id))
+            .scalar()
+            or 0
+        )
+
+        results = (
+            db.query(
+                ChallengeWinner.discord_user_id,
+                func.count(ChallengeWinner.id).label("solve_count"),
+                func.sum(case((ChallengeWinner.rank == 1, 1), else_=0)).label("first_bloods"),
+                func.sum(case((ChallengeWinner.rank == 2, 1), else_=0)).label("second_bloods"),
+                func.sum(case((ChallengeWinner.rank == 3, 1), else_=0)).label("third_bloods"),
+                func.max(ChallengeWinner.solved_at).label("last_solved_at"),
+            )
+            .join(Challenge, Challenge.id == ChallengeWinner.challenge_id)
+            .filter(Challenge.guild_id == str(guild_id))
+            .group_by(ChallengeWinner.discord_user_id)
+            .order_by(
+                func.count(ChallengeWinner.id).desc(),
+                func.sum(case((ChallengeWinner.rank == 1, 1), else_=0)).desc(),
+                func.max(ChallengeWinner.solved_at).asc(),
+            )
+            .all()
+        )
+
+        solvers = [
+            {
+                "user_id": int(row[0]),
+                "solve_count": int(row[1]),
+                "first_bloods": int(row[2] or 0),
+                "second_bloods": int(row[3] or 0),
+                "third_bloods": int(row[4] or 0),
+            }
+            for row in results
+        ]
+
+        return {
+            "total_challenges": total_challenges,
+            "total_solvers": len(solvers),
+            "solvers": solvers,
+        }
+    finally:
+        db.close()
+
+
 # ---------------------------------------------------------------------------
 # Embed Builders
 # ---------------------------------------------------------------------------
@@ -459,6 +511,136 @@ def format_rank_label(rank: int) -> str:
     elif rank == 3:
         return "🥉 Third Blood"
     return f"Rank #{rank}"
+
+
+def build_solvers_embed(
+    guild_name: str,
+    total_challenges: int,
+    solvers: list[dict],
+    page: int = 1,
+    per_page: int = 10,
+) -> discord.Embed:
+    """Builds the CTF challenge solvers ranking embed with pagination."""
+    total_solvers = len(solvers)
+    total_pages = max(1, (total_solvers + per_page - 1) // per_page)
+    page = max(1, min(page, total_pages))
+
+    embed = discord.Embed(
+        title="🎯 CTF Challenge Solvers Leaderboard",
+        color=discord.Color.gold(),
+        timestamp=datetime.datetime.now(datetime.timezone.utc),
+    )
+
+    if not solvers:
+        embed.description = (
+            f"**Server:** {guild_name}\n"
+            f"**Total Challenges:** `{total_challenges}`\n\n"
+            "No members have solved any CTF challenges yet.\n"
+            "When a challenge is active, solve it to claim your position on the leaderboard!"
+        )
+        embed.set_footer(text="CTF Solvers • Page 1/1")
+        return embed
+
+    start = (page - 1) * per_page
+    end = start + per_page
+    page_solvers = solvers[start:end]
+
+    lines = []
+    for idx, s in enumerate(page_solvers):
+        rank = start + idx + 1
+        if rank == 1:
+            badge = "🥇"
+        elif rank == 2:
+            badge = "🥈"
+        elif rank == 3:
+            badge = "🥉"
+        else:
+            badge = f"`#{rank:<2}`"
+
+        uid = s["user_id"]
+        count = s["solve_count"]
+        solve_str = f"**{count}** solve{'s' if count != 1 else ''}"
+
+        blood_parts = []
+        if s.get("first_bloods"):
+            blood_parts.append(f"🥇 {s['first_bloods']} FB")
+        if s.get("second_bloods"):
+            blood_parts.append(f"🥈 {s['second_bloods']} SB")
+        if s.get("third_bloods"):
+            blood_parts.append(f"🥉 {s['third_bloods']} TB")
+
+        details = f" *({', '.join(blood_parts)})*" if blood_parts else ""
+        lines.append(f"{badge} <@{uid}> — {solve_str}{details}")
+
+    embed.description = (
+        f"**Server:** {guild_name}\n"
+        f"**Total Challenges:** `{total_challenges}` | **Total Solvers:** `{total_solvers}`\n\n"
+        + "\n".join(lines)
+    )
+    embed.set_footer(text=f"Page {page}/{total_pages} • Total Solvers: {total_solvers}")
+    return embed
+
+
+class SolversPaginationView(discord.ui.View):
+    """Interactive pagination view for CTF solvers list."""
+
+    def __init__(
+        self,
+        guild_name: str,
+        total_challenges: int,
+        solvers: list[dict],
+        current_page: int = 1,
+        per_page: int = 10,
+    ):
+        super().__init__(timeout=180)
+        self.guild_name = guild_name
+        self.total_challenges = total_challenges
+        self.solvers = solvers
+        self.current_page = current_page
+        self.per_page = per_page
+        self.total_pages = max(1, (len(solvers) + per_page - 1) // per_page)
+        self._update_buttons()
+
+    def _update_buttons(self):
+        self.prev_btn.disabled = (self.current_page <= 1)
+        self.next_btn.disabled = (self.current_page >= self.total_pages)
+        self.page_indicator.label = f"{self.current_page} / {self.total_pages}"
+
+    @discord.ui.button(label="◀️ Previous", style=discord.ButtonStyle.primary, row=0)
+    async def prev_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page > 1:
+            self.current_page -= 1
+            self._update_buttons()
+            embed = build_solvers_embed(
+                self.guild_name,
+                self.total_challenges,
+                self.solvers,
+                page=self.current_page,
+                per_page=self.per_page,
+            )
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.defer()
+
+    @discord.ui.button(label="1 / 1", style=discord.ButtonStyle.secondary, disabled=True, row=0)
+    async def page_indicator(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+
+    @discord.ui.button(label="Next ▶️", style=discord.ButtonStyle.primary, row=0)
+    async def next_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page < self.total_pages:
+            self.current_page += 1
+            self._update_buttons()
+            embed = build_solvers_embed(
+                self.guild_name,
+                self.total_challenges,
+                self.solvers,
+                page=self.current_page,
+                per_page=self.per_page,
+            )
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.defer()
 
 
 # ---------------------------------------------------------------------------
@@ -799,6 +981,12 @@ class ChallengesAdminView(discord.ui.View):
         await interaction.response.defer(ephemeral=True)
         embed = await self.cog.get_status_embed(interaction.guild)
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label="All Solvers", style=discord.ButtonStyle.secondary, emoji="👥", row=1)
+    async def all_solvers_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._admin_check(interaction):
+            return
+        await self.cog.send_solvers_leaderboard(interaction, ephemeral=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1211,6 +1399,85 @@ class ChallengesCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         embed = await self.get_status_embed(interaction.guild)
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @challenge_admin.command(name="solvers", description="Admin: View all CTF solvers and solve statistics")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def admin_solvers_cmd(self, interaction: discord.Interaction):
+        await self.send_solvers_leaderboard(interaction, ephemeral=True)
+
+    async def send_solvers_leaderboard(
+        self, interaction: discord.Interaction, ephemeral: bool = False
+    ):
+        """Sends the CTF solvers ranking list with pagination."""
+        if not interaction.guild:
+            if interaction.response.is_done():
+                await interaction.followup.send("This command can only be used in a server.", ephemeral=True)
+            else:
+                await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            return
+
+        settings = await run_db(_get_challenge_settings_worker, str(interaction.guild_id))
+        if not settings.get("enabled"):
+            msg = "Challenges are currently disabled on this server."
+            if interaction.response.is_done():
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(msg, ephemeral=True)
+            return
+
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=ephemeral)
+
+        data = await run_db(_get_challenge_solvers_worker, str(interaction.guild_id))
+        total_challenges = data.get("total_challenges", 0)
+        solvers = data.get("solvers", [])
+
+        embed = build_solvers_embed(
+            interaction.guild.name,
+            total_challenges,
+            solvers,
+            page=1,
+            per_page=10,
+        )
+        view = (
+            SolversPaginationView(
+                interaction.guild.name,
+                total_challenges,
+                solvers,
+                current_page=1,
+                per_page=10,
+            )
+            if len(solvers) > 10
+            else None
+        )
+
+        await interaction.followup.send(embed=embed, view=view, ephemeral=ephemeral)
+
+    # -----------------------------------------------------------------------
+    # Public Application Commands
+    # -----------------------------------------------------------------------
+
+    @app_commands.command(
+        name="challenge-solvers",
+        description="View all members who played CTF challenges and how many they have solved",
+    )
+    @app_commands.guild_only()
+    @app_commands.describe(ephemeral="Whether to show the response privately (default: False)")
+    async def challenge_solvers_cmd(
+        self, interaction: discord.Interaction, ephemeral: bool = False
+    ):
+        await self.send_solvers_leaderboard(interaction, ephemeral=ephemeral)
+
+    @app_commands.command(
+        name="ctf-solvers",
+        description="View all members who played CTF challenges and how many they have solved",
+    )
+    @app_commands.guild_only()
+    @app_commands.describe(ephemeral="Whether to show the response privately (default: False)")
+    async def ctf_solvers_cmd(
+        self, interaction: discord.Interaction, ephemeral: bool = False
+    ):
+        await self.send_solvers_leaderboard(interaction, ephemeral=ephemeral)
 
 
 async def setup(bot: commands.Bot):
